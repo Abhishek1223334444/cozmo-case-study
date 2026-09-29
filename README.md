@@ -13,10 +13,11 @@ claim of passing the case study's accuracy or cold walk-in gates**.
 
 ```sh
 cd /Users/apple/cozmo-case-study
-uv run cozmo serve --directory out --port 8765
+uv run cozmo serve --directory out --port 8877
 ```
 
-Open `http://127.0.0.1:8765/benchmark/c7d28f72c6/after/` for the larger scan with
+Open `http://127.0.0.1:8877/` for the results gallery, or
+`http://127.0.0.1:8877/benchmark/c7d28f72c6/after/` for the larger scan with
 ceiling coverage. Each output directory also has an `index.html` that opens directly
 in a browser, plus `plan.json`, `plan.svg`, `plan.png`, and exact run options.
 
@@ -69,9 +70,10 @@ not an independent photo benchmark. Supplied raw video is sideways and needs
 ## Reproduce and evaluate
 
 ```sh
-uv run python scripts/reproduce.py --rgb --damage
+uv run python scripts/reproduce.py --rgb --damage --property
 uv run cozmo validate out/benchmark/c7d28f72c6/after/plan.json
 uv run pytest -q
+uv run ruff check src scripts tests
 
 # After independently measuring and matching the physical dimensions:
 uv run cozmo evaluate out/lidar-property/plan.json my-laser-measurements.json
@@ -111,6 +113,9 @@ display offsets, never invented adjacency. RGB room envelopes and openings do no
 meet the full stitched-property contract. Video components may contain multiple rooms
 without correctly separating them.
 
+Saved sample-run counts, geometry failures and runtime measurements are listed in
+`docs/benchmark-report.md`. Cached and cold runtimes are not directly comparable.
+
 Damage outputs are candidates requiring confirmation, not calibrated classifications.
 The supplied data has no labelled staged-damage benchmark; zero candidates does not
 mean no damage. Concealed-moisture flags only request inspection. Scope quantities are
@@ -120,3 +125,19 @@ Independent laser/tape truth, matched repeat captures, incumbent-app exports and
 interviewer's schema are absent. Their gates remain unverified. See
 `docs/compliance.md`, `docs/technical-report.md`, `docs/capture-protocol.md`, and
 `docs/fix-declaration.md` for the submission evidence and limits.
+
+## Result bundle
+
+`deliverables/cozmo-case-study.zip` contains source, locked dependencies, docs, saved
+plans, a standalone results gallery, an installable wheel and incremental Git history.
+It excludes the large sample archives, model weights and caches; the pinned download
+commands above restore those. After extracting, open `out/index.html` in a browser.
+
+To regenerate the bundle after reproducing results and committing reviewed changes:
+
+```sh
+uv build --offline
+uv run --offline python scripts/package_results.py
+```
+
+`MANIFEST.json` records the source revision and hashes of every packaged file.

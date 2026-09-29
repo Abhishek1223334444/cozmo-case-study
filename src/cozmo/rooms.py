@@ -40,7 +40,9 @@ def free_space(
         np.maximum.at(far, b, np.hypot(d[:, 0], d[:, 1]))
         occ = np.flatnonzero(far > 0)
         a = (occ + 0.5) / FAN_BINS * 2 * np.pi - np.pi
-        tips = (cam + np.stack([np.cos(a), np.sin(a)], 1) * far[occ, None] - frame.origin) / frame.res
+        tips = (
+            cam + np.stack([np.cos(a), np.sin(a)], 1) * far[occ, None] - frame.origin
+        ) / frame.res
         apex = (cam - frame.origin) / frame.res
         mask = np.zeros(frame.shape, np.uint8)
         for j in np.flatnonzero(np.diff(occ) == 1):
@@ -109,7 +111,7 @@ def _merge_non_doors(ws, wall_uv, wall_n, frame: PlanFrame) -> np.ndarray:
             ma = ws == a
             ring = ndi.binary_dilation(ma, np.ones((3, 3))) & ~ma
             nb, cnt = np.unique(ws[ring], return_counts=True)
-            for b, n in zip(nb, cnt):
+            for b, n in zip(nb, cnt, strict=True):
                 if b > a and n >= 5 and not _boundary_is_door(ws, a, b, wall_uv, wall_n, frame):
                     ws[ws == b] = a
                     changed = True

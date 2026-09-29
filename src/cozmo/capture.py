@@ -17,8 +17,8 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import cv2
+import numpy as np
 from PIL import Image
 from scipy.spatial.transform import Rotation
 
@@ -87,7 +87,9 @@ class Capture:
 
     def depth(self, i: int) -> np.ndarray:
         """Depth in metres, 0 where invalid."""
-        d = np.asarray(Image.open(self.root / "depth" / f"{self.frames[i].index:06d}.png"), dtype=np.float32)
+        d = np.asarray(
+            Image.open(self.root / "depth" / f"{self.frames[i].index:06d}.png"), dtype=np.float32
+        )
         return d / 1000.0
 
     def confidence(self, i: int) -> np.ndarray:
@@ -144,6 +146,7 @@ class Capture:
             *(
                 self.points_world(i, min_conf, max_depth, stride)
                 for i in range(0, len(self), frame_step)
-            )
+            ),
+            strict=True,
         )
         return np.concatenate(pts), np.concatenate(nrm)

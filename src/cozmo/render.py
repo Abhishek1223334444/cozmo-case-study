@@ -20,7 +20,9 @@ WINDOW = "#2e86c1"
 
 
 def _fmt(m) -> str:
-    return f"{m.value:.2f}±{Z95 * m.sigma * 100:.0f}cm" if m.sigma * Z95 >= 0.005 else f"{m.value:.3f}"
+    return (
+        f"{m.value:.2f}±{Z95 * m.sigma * 100:.0f}cm" if m.sigma * Z95 >= 0.005 else f"{m.value:.3f}"
+    )
 
 
 def render(plan: PlanOut, path: str | Path, wall_uv: np.ndarray | None = None) -> None:
@@ -35,7 +37,13 @@ def render(plan: PlanOut, path: str | Path, wall_uv: np.ndarray | None = None) -
         centroid = V.mean(0)
         for w in room.walls:
             a, b = np.array(w.start), np.array(w.end)
-            ax.plot(*np.c_[a, b], color=WALL, lw=2.4 if w.measured else 1.2, ls="-" if w.measured else "--", zorder=3)
+            ax.plot(
+                *np.c_[a, b],
+                color=WALL,
+                lw=2.4 if w.measured else 1.2,
+                ls="-" if w.measured else "--",
+                zorder=3,
+            )
             if w.length.value < 0.4:
                 continue
             mid = (a + b) / 2
@@ -46,7 +54,15 @@ def render(plan: PlanOut, path: str | Path, wall_uv: np.ndarray | None = None) -
             ang = np.degrees(np.arctan2(d[1], d[0]))
             if ang > 90 or ang < -90:
                 ang += 180
-            ax.text(*(mid + n * 0.14), _fmt(w.length), fontsize=6.5, ha="center", va="center", rotation=ang, zorder=5)
+            ax.text(
+                *(mid + n * 0.14),
+                _fmt(w.length),
+                fontsize=6.5,
+                ha="center",
+                va="center",
+                rotation=ang,
+                zorder=5,
+            )
         for o in room.openings:
             a, b = np.array(room.walls[o.wall].start), np.array(room.walls[o.wall].end)
             d = (b - a) / np.linalg.norm(b - a)
@@ -56,7 +72,15 @@ def render(plan: PlanOut, path: str | Path, wall_uv: np.ndarray | None = None) -
         lines = [room.name, f"{room.floor_area.value:.2f} m²"]
         if room.ceiling_height:
             lines.append(f"h {room.ceiling_height.value:.2f} m")
-        ax.text(*centroid, "\n".join(lines), fontsize=8, ha="center", va="center", weight="bold", zorder=6)
+        ax.text(
+            *centroid,
+            "\n".join(lines),
+            fontsize=8,
+            ha="center",
+            va="center",
+            weight="bold",
+            zorder=6,
+        )
 
     ax.set_aspect("equal")
     ax.axis("off")

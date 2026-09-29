@@ -9,3 +9,6 @@ artifacts/
 out/
 *.zip
 .DS_Store
+.ruff_cache/
+deliverables/
+dist/

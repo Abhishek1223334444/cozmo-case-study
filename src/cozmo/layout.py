@@ -69,7 +69,7 @@ def _mask_contour(mask: np.ndarray, frame: PlanFrame) -> np.ndarray:
 def _rectilinear(poly: np.ndarray) -> list[Wall]:
     """Snap a simple polygon to alternating axis-aligned walls."""
     edges = []
-    for p, q in zip(poly, np.roll(poly, -1, 0)):
+    for p, q in zip(poly, np.roll(poly, -1, 0), strict=True):
         d = q - p
         axis = 0 if abs(d[0]) >= abs(d[1]) else 1
         coord = (p[1] + q[1]) / 2 if axis == 0 else (p[0] + q[0]) / 2
@@ -142,7 +142,7 @@ def _collapse(walls: list[Wall]) -> list[Wall]:
 def _vertices(walls: list) -> np.ndarray:
     """Corner i joins wall i-1 and wall i."""
     vs = []
-    for prev, cur in zip(np.roll(np.array(walls, dtype=object), 1), walls):
+    for prev, cur in zip(np.roll(np.array(walls, dtype=object), 1), walls, strict=True):
         pa, pc = (prev.axis, prev.coord) if isinstance(prev, Wall) else (prev[0], prev[1])
         ca, cc = (cur.axis, cur.coord) if isinstance(cur, Wall) else (cur[0], cur[1])
         # axis 0 wall fixes v; axis 1 wall fixes u
@@ -158,7 +158,13 @@ def _lengths_from_walls(walls) -> np.ndarray:
 
 
 def _snap_walls(
-    walls: list[Wall], wall_uv, wall_n, others: np.ndarray, frame: PlanFrame, search=0.35, bin_m=0.005
+    walls: list[Wall],
+    wall_uv,
+    wall_n,
+    others: np.ndarray,
+    frame: PlanFrame,
+    search=0.35,
+    bin_m=0.005,
 ):
     """Move each wall onto the measured surface: a dense layer of vertical points
     whose normal faces into the room. Furniture fronts sit inward of the wall, so
@@ -183,7 +189,9 @@ def _snap_walls(
         x = wall_uv[m, across]
         if len(x) < 50:
             continue
-        hist, edges = np.histogram(x, bins=np.arange(w.coord - search, w.coord + search + bin_m, bin_m))
+        hist, edges = np.histogram(
+            x, bins=np.arange(w.coord - search, w.coord + search + bin_m, bin_m)
+        )
         hist = np.convolve(hist, [1, 2, 1], "same")
         strong = np.flatnonzero(hist >= 0.4 * hist.max())
         centers = edges[strong] + bin_m / 2
@@ -285,7 +293,7 @@ class Opening:
 def _runs(flags: np.ndarray) -> list[tuple[int, int]]:
     """[start, end) index pairs of True runs."""
     d = np.diff(np.r_[0, flags.astype(np.int8), 0])
-    return list(zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1)))
+    return list(zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1), strict=True))
 
 
 def find_openings(
@@ -318,13 +326,13 @@ def find_openings(
         nb = int(np.ceil(length / bin_m))
         idx = np.clip((s / bin_m).astype(int), 0, nb - 1)
 
-        def band(lo, hi):
+        def band(lo, hi, nb=nb, hh=hh, idx=idx):
             occ = np.zeros(nb, int)
             k = (hh > lo) & (hh < hi)
             np.add.at(occ, idx[k], 1)
             return occ > 0
 
-        low, mid, head = band(0.15, 0.75), band(0.9, 1.8), band(2.05, top_h)
+        low, mid = band(0.15, 0.75), band(0.9, 1.8)
 
         # was the space just beyond the wall observed (seen through the gap)?
         t = (np.arange(nb) + 0.5) * bin_m
@@ -370,7 +378,9 @@ def find_openings(
                     sill = hh[(s > j0) & (s < j1) & (hh < 1.2)]
                     bottom = float(np.percentile(sill, 98)) if len(sill) > 20 else 0.9
                 out.append(
-                    Opening(kind, i, j0, j1 - j0, bottom, top, frac_seen, int(len(left) + len(right)))
+                    Opening(
+                        kind, i, j0, j1 - j0, bottom, top, frac_seen, int(len(left) + len(right))
+                    )
                 )
     return out
 
@@ -385,7 +395,7 @@ def _walls_from_polygon(coords: np.ndarray, originals: list[Wall]) -> list[Wall]
     """Rebuild a rectilinear wall list from polygon vertices, keeping the surface
     statistics of any original wall the new edge still lies on."""
     walls = []
-    for p, q in zip(coords, np.roll(coords, -1, 0)):
+    for p, q in zip(coords, np.roll(coords, -1, 0), strict=True):
         d = q - p
         if np.hypot(*d) < 1e-6:
             continue
@@ -393,7 +403,11 @@ def _walls_from_polygon(coords: np.ndarray, originals: list[Wall]) -> list[Wall]
         coord = float(p[1] if axis == 0 else p[0])
         same = [w for w in originals if w.axis == axis and abs(w.coord - coord) < 0.01]
         if same:
-            walls.append(Wall(axis, coord, same[0].support, same[0].spread, same[0].n_points, same[0].snapped))
+            walls.append(
+                Wall(
+                    axis, coord, same[0].support, same[0].spread, same[0].n_points, same[0].snapped
+                )
+            )
         else:
             walls.append(Wall(axis, coord))
     merged = []
@@ -419,7 +433,9 @@ def resolve_overlaps(rooms: list[RoomLayout], labels: np.ndarray, frame: PlanFra
             if inter.area < 1e-4:
                 continue
             minx, miny, maxx, maxy = inter.bounds
-            uu, vv = np.meshgrid(np.arange(minx, maxx, frame.res / 2), np.arange(miny, maxy, frame.res / 2))
+            uu, vv = np.meshgrid(
+                np.arange(minx, maxx, frame.res / 2), np.arange(miny, maxy, frame.res / 2)
+            )
             q = np.c_[uu.ravel(), vv.ravel()]
             r, c = frame.to_cell(q)
             ok = (r >= 0) & (r < labels.shape[0]) & (c >= 0) & (c < labels.shape[1])

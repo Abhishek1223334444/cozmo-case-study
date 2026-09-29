@@ -30,7 +30,15 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=8,<10",
+    "ruff>=0.16.9",
 ]
 
 [tool.uv.sources]
 lightglue = { git = "https://github.com/cvg/LightGlue.git" }
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B"]

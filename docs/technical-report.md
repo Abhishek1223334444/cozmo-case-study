@@ -55,8 +55,9 @@ pose-graph optimization uses redundant edges. The first upright image supplies a
 vertical prior refined from surface normals. Focal length is assumed from image size.
 
 For photo folders, the strongest registered subset per room forms an estimated
-oriented envelope. Discarded views are reported. Video currently produces observed
-component envelopes; complete multi-room segmentation is unfinished. Disconnected
+oriented envelope. Discarded views are reported. Video segments sufficiently connected
+components using reconstructed visibility and wall geometry, falling back to observed
+envelopes for small components. Correct whole-property segmentation is unverified. Disconnected
 components remain explicitly unplaced, with display-only offsets. Overlaps and
 unresolved stitching are quality failures, not hidden by visually packing rooms.
 This baseline does not establish the photo ±8%, video ±3%, or adjacency gates.

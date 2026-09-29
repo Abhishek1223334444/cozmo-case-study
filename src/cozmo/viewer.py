@@ -1,6 +1,7 @@
 """Standalone interactive viewer: no network, CDN, or server needed."""
-from pathlib import Path
+
 import json
+from pathlib import Path
 
 
 def write_viewer(plan, path):

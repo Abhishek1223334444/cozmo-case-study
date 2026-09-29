@@ -41,7 +41,13 @@ def _room_out(room: RoomLayout, openings: list[Opening], labels, frame, adjacenc
         # length of wall i is set by its two perpendicular neighbours
         s = quad(sig[(i - 1) % k], sig[(i + 1) % k], SCALE_REL * lengths[i])
         walls.append(
-            WallOut(i, V[i].round(4).tolist(), V[(i + 1) % k].round(4).tolist(), M(lengths[i], s), room.walls[i].snapped)
+            WallOut(
+                i,
+                V[i].round(4).tolist(),
+                V[(i + 1) % k].round(4).tolist(),
+                M(lengths[i], s),
+                room.walls[i].snapped,
+            )
         )
     area = room.area
     area_sigma = quad(*(lengths[i] * sig[i] for i in range(k)), 2 * SCALE_REL * area)
@@ -111,13 +117,16 @@ def _room_out(room: RoomLayout, openings: list[Opening], labels, frame, adjacenc
     )
 
 
-def run(capture_dir: str | Path, cache_dir: str | Path = "out/cache", drift: bool = True) -> tuple[PlanOut, dict]:
+def run(
+    capture_dir: str | Path, cache_dir: str | Path = "out/cache", drift: bool = True
+) -> tuple[PlanOut, dict]:
     """Returns the plan and a bag of intermediates for rendering/debugging."""
     t0 = time.time()
     cap = Capture(capture_dir)
     drift_report = {"method": "off", "applied": False}
     if drift:
         from .drift import correct
+
         drift_report = correct(cap, cache_dir)
     P, N, _ = fused_cloud(cap, cache_dir)
     floor_y = g.find_floor(P, N)
@@ -146,7 +155,9 @@ def run(capture_dir: str | Path, cache_dir: str | Path = "out/cache", drift: boo
     lays = []
     for rid in range(1, labels.max() + 1):
         others = (labels > 0) & (labels != rid)
-        lays.append(fit_room(rid, labels == rid, frame, P, N, uv, floor_y, vertical, horizontal, others))
+        lays.append(
+            fit_room(rid, labels == rid, frame, P, N, uv, floor_y, vertical, horizontal, others)
+        )
     n_overlaps = resolve_overlaps(lays, labels, frame)
 
     adjacency: set[tuple[int, int]] = set()
@@ -181,12 +192,29 @@ def run(capture_dir: str | Path, cache_dir: str | Path = "out/cache", drift: boo
             "runtime_s": round(time.time() - t0, 1),
         },
     )
-    plan.quality = {"status": "experimental", "metric_scale": "lidar_sensor",
-                    "interval_calibration": "unvalidated_without_independent_ground_truth",
-                    "warnings": ["Manhattan-world geometry assumes approximately perpendicular walls.",
-                                 "Openings are geometric candidates, not validated detections."]}
-    plan.provenance = {"input_fingerprint": cap.fingerprint, "capture_path": str(cap.root.resolve()),
-                       "input_modalities": ["rgb", "depth", "confidence", "poses", "intrinsics"]}
-    debug = dict(capture=cap, points=P, normals=N, frame=frame, labels=labels, traj=traj,
-                 wall_uv=uv[wsel], layouts=layouts, free=free)
+    plan.quality = {
+        "status": "experimental",
+        "metric_scale": "lidar_sensor",
+        "interval_calibration": "unvalidated_without_independent_ground_truth",
+        "warnings": [
+            "Manhattan-world geometry assumes approximately perpendicular walls.",
+            "Openings are geometric candidates, not validated detections.",
+        ],
+    }
+    plan.provenance = {
+        "input_fingerprint": cap.fingerprint,
+        "capture_path": str(cap.root.resolve()),
+        "input_modalities": ["rgb", "depth", "confidence", "poses", "intrinsics"],
+    }
+    debug = dict(
+        capture=cap,
+        points=P,
+        normals=N,
+        frame=frame,
+        labels=labels,
+        traj=traj,
+        wall_uv=uv[wsel],
+        layouts=layouts,
+        free=free,
+    )
     return plan, debug

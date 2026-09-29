@@ -24,7 +24,10 @@ class M:
             raise ValueError("Measurements must be finite with nonnegative uncertainty")
         return {
             "value": round(self.value, 4),
-            "ci95": [round(max(0, self.value - Z95 * self.sigma), 4), round(self.value + Z95 * self.sigma, 4)],
+            "ci95": [
+                round(max(0, self.value - Z95 * self.sigma), 4),
+                round(self.value + Z95 * self.sigma, 4),
+            ],
             "sigma": round(self.sigma, 4),
             "unit": self.unit,
             "interval_status": "uncalibrated_model_interval",

@@ -7,7 +7,7 @@ import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-SCHEMA_VERSION = "cozmo.plan/0.1"
+SCHEMA_VERSION = "cozmo.plan/0.2"
 Z95 = 1.96
 
 
@@ -20,11 +20,14 @@ class M:
     unit: str = "m"
 
     def to_json(self) -> dict:
+        if not math.isfinite(self.value) or not math.isfinite(self.sigma) or self.sigma < 0:
+            raise ValueError("Measurements must be finite with nonnegative uncertainty")
         return {
             "value": round(self.value, 4),
-            "ci95": [round(self.value - Z95 * self.sigma, 4), round(self.value + Z95 * self.sigma, 4)],
+            "ci95": [round(max(0, self.value - Z95 * self.sigma), 4), round(self.value + Z95 * self.sigma, 4)],
             "sigma": round(self.sigma, 4),
             "unit": self.unit,
+            "interval_status": "uncalibrated_model_interval",
         }
 
 
@@ -76,6 +79,10 @@ class PlanOut:
     diagnostics: dict = field(default_factory=dict)
     damage: list = field(default_factory=list)
     scope: list = field(default_factory=list)
+    concealed_damage: list = field(default_factory=list)
+    surfaces: list = field(default_factory=list)
+    quality: dict = field(default_factory=dict)
+    provenance: dict = field(default_factory=dict)
     schema: str = SCHEMA_VERSION
 
     def to_json(self) -> dict:
@@ -95,7 +102,7 @@ class PlanOut:
         return conv(self)
 
     def save(self, path: str | Path) -> None:
-        Path(path).write_text(json.dumps(self.to_json(), indent=2))
+        Path(path).write_text(json.dumps(self.to_json(), indent=2, allow_nan=False))
 
 
 __all__ = ["M", "quad", "WallOut", "OpeningOut", "RoomOut", "PlanOut", "asdict"]

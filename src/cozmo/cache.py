@@ -11,7 +11,7 @@ from .geometry import voxel_downsample
 
 
 def fused_cloud(cap: Capture, cache_dir: str | Path = "out/cache", voxel: float = 0.01):
-    path = Path(cache_dir) / f"{cap.root.name}_v{int(voxel * 1000)}mm.npz"
+    path = Path(cache_dir) / f"{cap.fingerprint}_{cap.cache_tag}_v{int(voxel * 1000)}mm.npz"
     if path.exists():
         z = np.load(path)
         return z["P"].astype(np.float64), z["N"].astype(np.float64), z["C"]

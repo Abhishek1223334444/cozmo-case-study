@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 samples/
+samples
+models/
+artifacts/
+.pytest_cache/
 out/
 *.zip
 .DS_Store

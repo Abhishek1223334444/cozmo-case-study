@@ -25,6 +25,8 @@ def find_floor(P: np.ndarray, N: np.ndarray, bin_m: float = 0.01) -> float:
     """World-Y of the floor: the lowest strongly supported upward-facing layer."""
     horiz = np.abs(N[:, 1]) > HORIZONTAL_NY
     y = P[horiz, 1]
+    if len(y) < 20 or np.ptp(y) < bin_m:
+        raise ValueError("Insufficient observed horizontal surfaces to estimate a floor")
     hist, edges = np.histogram(y, bins=np.arange(y.min(), y.max() + bin_m, bin_m))
     strong = np.flatnonzero(hist > 0.25 * hist.max())
     return _peak_refine(y, edges[strong[0]] + bin_m / 2, 0.03)
@@ -45,6 +47,8 @@ def find_ceiling(
 def manhattan_angle(N: np.ndarray, vertical: np.ndarray) -> float:
     """Dominant wall orientation in radians, in [0, pi/2)."""
     ang = np.arctan2(N[vertical, 2], N[vertical, 0]) % (np.pi / 2)
+    if len(ang) < 20:
+        raise ValueError("Insufficient observed wall surfaces to establish plan orientation")
     hist, edges = np.histogram(ang, bins=360, range=(0, np.pi / 2))
     hist = ndi.gaussian_filter1d(hist.astype(float), 2, mode="wrap")
     a0 = edges[np.argmax(hist)] + (edges[1] - edges[0]) / 2

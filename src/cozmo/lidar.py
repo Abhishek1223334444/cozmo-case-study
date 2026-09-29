@@ -18,9 +18,9 @@ from .rooms import free_space, segment_rooms
 RES = 0.02  # plan raster, m
 
 # Error model priors (1-sigma). To be calibrated against tape/laser ground truth.
-SIGMA_SURFACE_SYS = 0.004  # LiDAR depth bias + residual pose error on a fitted plane
+SIGMA_SURFACE_SYS = 0.02  # provisional systematic allowance, not calibrated accuracy
 SIGMA_UNMEASURED = 0.05  # wall placed from free-space raster only
-SCALE_REL = 0.002  # relative metric scale error of ARKit VIO
+SCALE_REL = 0.01  # provisional relative scale allowance
 SIGMA_JAMB = 0.008  # one jamb edge located from surface points
 SIGMA_JAMB_WEAK = 0.03
 
@@ -93,7 +93,7 @@ def _room_out(room: RoomLayout, openings: list[Opening], labels, frame, adjacenc
                 o.wall,
                 M(o.start, quad(sig[(o.wall - 1) % k], jamb)),
                 M(o.width, quad(jamb, jamb, SCALE_REL * o.width)),
-                M(o.top, quad(0.02, SCALE_REL * o.top)),
+                M(o.top - o.bottom, quad(0.03, SCALE_REL * o.top)),
                 M(o.bottom, 0.02) if o.kind == "window" else None,
                 connects,
             )
@@ -111,10 +111,14 @@ def _room_out(room: RoomLayout, openings: list[Opening], labels, frame, adjacenc
     )
 
 
-def run(capture_dir: str | Path, cache_dir: str | Path = "out/cache") -> tuple[PlanOut, dict]:
+def run(capture_dir: str | Path, cache_dir: str | Path = "out/cache", drift: bool = True) -> tuple[PlanOut, dict]:
     """Returns the plan and a bag of intermediates for rendering/debugging."""
     t0 = time.time()
     cap = Capture(capture_dir)
+    drift_report = {"method": "off", "applied": False}
+    if drift:
+        from .drift import correct
+        drift_report = correct(cap, cache_dir)
     P, N, _ = fused_cloud(cap, cache_dir)
     floor_y = g.find_floor(P, N)
     ceil_y = g.find_ceiling(P, N, floor_y)
@@ -130,7 +134,7 @@ def run(capture_dir: str | Path, cache_dir: str | Path = "out/cache") -> tuple[P
     wall_n = frame.to_plan(np.c_[N[wsel, 0], np.zeros(wsel.sum()), N[wsel, 2]])
     traj = frame.to_plan(np.array([f.T_wc[:3, 3] for f in cap.frames]))
 
-    cache = Path(cache_dir) / f"{cap.root.name}_free_{int(RES * 1000)}mm.npy"
+    cache = Path(cache_dir) / f"{cap.fingerprint}_{cap.cache_tag}_free_{int(RES * 1000)}mm.npy"
     if cache.exists() and np.load(cache).shape == frame.shape:
         free = np.load(cache)
     else:
@@ -153,7 +157,7 @@ def run(capture_dir: str | Path, cache_dir: str | Path = "out/cache") -> tuple[P
         rooms_out.append(_room_out(lay, ops, labels, frame, adjacency))
 
     footprint = sum(r.floor_area.value for r in rooms_out)
-    footprint_sigma = quad(*(r.floor_area.sigma for r in rooms_out))
+    footprint_sigma = sum(r.floor_area.sigma for r in rooms_out)  # shared scale/bias is correlated
     path_len = float(np.linalg.norm(np.diff(traj, axis=0), axis=1).sum())
     plan = PlanOut(
         capture=cap.root.name,
@@ -172,10 +176,17 @@ def run(capture_dir: str | Path, cache_dir: str | Path = "out/cache") -> tuple[P
             "camera_path_m": round(path_len, 2),
             "loop_gap_m": round(float(np.linalg.norm(traj[-1] - traj[0])), 3),
             "rooms_seen_not_entered": int(len(np.unique(unvisited)) - 1),
-            "drift_correction": "none",
+            "drift_correction": drift_report,
             "overlaps_resolved": n_overlaps,
             "runtime_s": round(time.time() - t0, 1),
         },
     )
-    debug = dict(frame=frame, labels=labels, traj=traj, wall_uv=uv[wsel], layouts=layouts, free=free)
+    plan.quality = {"status": "experimental", "metric_scale": "lidar_sensor",
+                    "interval_calibration": "unvalidated_without_independent_ground_truth",
+                    "warnings": ["Manhattan-world geometry assumes approximately perpendicular walls.",
+                                 "Openings are geometric candidates, not validated detections."]}
+    plan.provenance = {"input_fingerprint": cap.fingerprint, "capture_path": str(cap.root.resolve()),
+                       "input_modalities": ["rgb", "depth", "confidence", "poses", "intrinsics"]}
+    debug = dict(capture=cap, points=P, normals=N, frame=frame, labels=labels, traj=traj,
+                 wall_uv=uv[wsel], layouts=layouts, free=free)
     return plan, debug

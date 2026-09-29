@@ -13,10 +13,12 @@ for the 1920x1440 RGB stream and are rescaled to depth resolution here.
 from __future__ import annotations
 
 import csv
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import cv2
 from PIL import Image
 from scipy.spatial.transform import Rotation
 
@@ -41,9 +43,21 @@ class Capture:
                 raise FileNotFoundError(f"no single Stray Scanner capture under {root}")
             root = subs[0]
         self.root = root
+        video = cv2.VideoCapture(str(root / "rgb.mp4"))
+        self.rgb_w = int(video.get(cv2.CAP_PROP_FRAME_WIDTH)) or RGB_W
+        self.rgb_h = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT)) or RGB_H
+        video.release()
         self.frames = self._load_odometry()
+        if not self.frames:
+            raise ValueError("Capture contains no camera poses")
         first = self.depth(0)
         self.depth_h, self.depth_w = first.shape
+        self.cache_tag = "raw"
+        h = hashlib.sha256((root / "odometry.csv").read_bytes())
+        for folder in ("depth", "confidence"):
+            for p in sorted((root / folder).glob("*.png")):
+                h.update(f"{p.name}:{p.stat().st_size}:{p.stat().st_mtime_ns}".encode())
+        self.fingerprint = h.hexdigest()[:20]
 
     def _load_odometry(self) -> list[Frame]:
         frames = []
@@ -54,7 +68,11 @@ class Capture:
                 row = [c.strip() for c in row]
                 ts, idx = float(row[0]), int(row[1])
                 x, y, z, qx, qy, qz, qw = map(float, row[2:9])
-                fx, fy, cx, cy = map(float, row[9:13])
+                if len(row) >= 13 and all(row[9:13]):
+                    fx, fy, cx, cy = map(float, row[9:13])
+                else:
+                    k = np.loadtxt(self.root / "camera_matrix.csv", delimiter=",")
+                    fx, fy, cx, cy = k[0, 0], k[1, 1], k[0, 2], k[1, 2]
                 T = np.eye(4)
                 T[:3, :3] = Rotation.from_quat([qx, qy, qz, qw]).as_matrix()
                 T[:3, 3] = [x, y, z]
@@ -67,17 +85,17 @@ class Capture:
 
     def depth(self, i: int) -> np.ndarray:
         """Depth in metres, 0 where invalid."""
-        d = np.asarray(Image.open(self.root / "depth" / f"{i:06d}.png"), dtype=np.float32)
+        d = np.asarray(Image.open(self.root / "depth" / f"{self.frames[i].index:06d}.png"), dtype=np.float32)
         return d / 1000.0
 
     def confidence(self, i: int) -> np.ndarray:
         """ARKit confidence: 0 low, 1 medium, 2 high."""
-        return np.asarray(Image.open(self.root / "confidence" / f"{i:06d}.png"))
+        return np.asarray(Image.open(self.root / "confidence" / f"{self.frames[i].index:06d}.png"))
 
     def K_depth(self, i: int) -> np.ndarray:
         K = self.frames[i].K_rgb.copy()
-        K[0] *= self.depth_w / RGB_W
-        K[1] *= self.depth_h / RGB_H
+        K[0] *= self.depth_w / self.rgb_w
+        K[1] *= self.depth_h / self.rgb_h
         return K
 
     def points_world(

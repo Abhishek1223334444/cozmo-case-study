@@ -361,6 +361,8 @@ def find_openings(
                 right = mid_pts[(mid_pts > en * bin_m - bin_m) & (mid_pts < en * bin_m + 0.15)]
                 j0 = float(np.percentile(left, 98)) if len(left) > 5 else st * bin_m
                 j1 = float(np.percentile(right, 2)) if len(right) > 5 else en * bin_m
+                if j0 < 0 or j1 > length or j1 <= j0:
+                    continue  # unbounded jamb: do not report an opening outside its wall
                 head_pts = hh[(s > j0) & (s < j1) & (hh > 1.5)]
                 top = float(np.percentile(head_pts, 2)) if len(head_pts) > 20 else top_h
                 bottom = 0.0

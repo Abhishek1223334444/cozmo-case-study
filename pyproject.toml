@@ -9,9 +9,9 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "jsonschema>=4.23",
+    "lightglue",
     "matplotlib>=3.11.2",
     "numpy>=2.4.6",
-    "opencv-python-headless>=5.0.0.93",
     "pillow>=12.3.0",
     "safetensors>=0.4",
     "scipy>=1.17.1",
@@ -31,3 +31,6 @@ build-backend = "uv_build"
 dev = [
     "pytest>=8,<10",
 ]
+
+[tool.uv.sources]
+lightglue = { git = "https://github.com/cvg/LightGlue.git" }

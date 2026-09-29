@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/cozmo/plan/0.2",
+  "title": "Local Cozmo plan contract (interviewer schema not supplied)",
+  "type": "object",
+  "required": ["schema", "capture", "tier", "rooms", "adjacency", "footprint_area", "frame", "quality", "provenance", "surfaces", "damage", "scope", "concealed_damage"],
+  "properties": {
+    "schema": {"const": "cozmo.plan/0.2"},
+    "capture": {"type": "string"},
+    "tier": {"enum": ["lidar", "video", "photos"]},
+    "rooms": {"type": "array", "items": {"$ref": "#/$defs/room"}},
+    "adjacency": {"type": "array", "items": {"type": "object", "required": ["rooms", "via"], "properties": {"rooms": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}, "via": {"type": "string"}}}},
+    "footprint_area": {"$ref": "#/$defs/measurement"},
+    "frame": {"type": "object"}, "quality": {"type": "object"}, "provenance": {"type": "object"}, "diagnostics": {"type": "object"},
+    "surfaces": {"type": "array", "items": {"type": "object", "required": ["id", "room_id", "kind", "gross_area"], "properties": {"id": {"type": "string"}, "room_id": {"type": "integer"}, "kind": {"enum": ["wall", "floor", "ceiling"]}, "gross_area": {"anyOf": [{"$ref": "#/$defs/measurement"}, {"type": "null"}]}}}},
+    "damage": {"type": "array", "items": {"type": "object", "required": ["id", "surface_id", "class", "status", "extent_area", "evidence"], "properties": {"extent_area": {"$ref": "#/$defs/measurement"}, "status": {"const": "candidate_requires_confirmation"}}}},
+    "scope": {"type": "array", "items": {"type": "object", "required": ["id", "surface_id", "damage_id", "action", "quantity", "status"], "properties": {"quantity": {"$ref": "#/$defs/measurement"}}}},
+    "concealed_damage": {"type": "array", "items": {"type": "object", "required": ["surface_id", "rule", "flag", "diagnosis"], "properties": {"diagnosis": {"const": false}}}}
+  },
+  "$defs": {
+    "point": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+    "measurement": {"type": "object", "required": ["value", "sigma", "ci95", "unit", "interval_status"], "properties": {"value": {"type": "number", "minimum": 0}, "sigma": {"type": "number", "minimum": 0}, "ci95": {"type": "array", "items": {"type": "number", "minimum": 0}, "minItems": 2, "maxItems": 2}, "unit": {"enum": ["m", "m2"]}, "interval_status": {"const": "uncalibrated_model_interval"}}, "additionalProperties": false},
+    "wall": {"type": "object", "required": ["index", "start", "end", "length", "measured"], "properties": {"index": {"type": "integer", "minimum": 0}, "start": {"$ref": "#/$defs/point"}, "end": {"$ref": "#/$defs/point"}, "length": {"$ref": "#/$defs/measurement"}, "measured": {"type": "boolean"}}},
+    "opening": {"type": "object", "required": ["kind", "wall", "offset", "width", "height", "sill", "connects_to"], "properties": {"kind": {"enum": ["door", "window"]}, "wall": {"type": "integer", "minimum": 0}, "offset": {"$ref": "#/$defs/measurement"}, "width": {"$ref": "#/$defs/measurement"}, "height": {"$ref": "#/$defs/measurement"}, "sill": {"anyOf": [{"$ref": "#/$defs/measurement"}, {"type": "null"}]}, "connects_to": {"type": ["integer", "null"]}}},
+    "room": {"type": "object", "required": ["id", "name", "polygon", "walls", "floor_area", "perimeter", "ceiling_height", "openings", "notes"], "properties": {"id": {"type": "integer", "minimum": 1}, "name": {"type": "string"}, "polygon": {"type": "array", "items": {"$ref": "#/$defs/point"}, "minItems": 3}, "walls": {"type": "array", "items": {"$ref": "#/$defs/wall"}, "minItems": 3}, "floor_area": {"$ref": "#/$defs/measurement"}, "perimeter": {"$ref": "#/$defs/measurement"}, "ceiling_height": {"anyOf": [{"$ref": "#/$defs/measurement"}, {"type": "null"}]}, "openings": {"type": "array", "items": {"$ref": "#/$defs/opening"}}, "notes": {"type": "array", "items": {"type": "string"}}}}
+  }
+}

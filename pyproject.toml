@@ -1,7 +1,7 @@
 [project]
 name = "cozmo"
 version = "0.1.0"
-description = "Add your description here"
+description = "Phone captures to dimensioned, stitched floor plans"
 readme = "README.md"
 authors = [
     { name = "abhishekshawethara", email = "abhishek.shaw@ethara.ai" }
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-cozmo = "cozmo:main"
+cozmo = "cozmo.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.10.4,<0.11.0"]

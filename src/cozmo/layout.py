@@ -91,7 +91,22 @@ def _rectilinear(poly: np.ndarray) -> list[Wall]:
         return out
 
     edges = _prune(merge_runs(edges), MIN_EDGE, merge_runs)
-    return [Wall(int(a), float(c)) for a, c, _ in edges]
+    walls = [Wall(int(a), float(c)) for a, c, _ in edges]
+    return _ccw(walls)
+
+
+def _ccw(walls: list[Wall]) -> list[Wall]:
+    x, y = _vertices(walls).T
+    signed = np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))
+    return walls if signed > 0 else walls[::-1]
+
+
+def inward_sign(vertices: np.ndarray, i: int, across: int) -> float:
+    """+1/-1: direction along plan axis `across` pointing into the room from wall i
+    (interior is left of each edge of a counter-clockwise outline)."""
+    d = vertices[(i + 1) % len(vertices)] - vertices[i]
+    left = np.array([-d[1], d[0]])
+    return float(np.sign(left[across]))
 
 
 def _prune(edges, min_len, merge_runs):
@@ -142,9 +157,13 @@ def _lengths_from_walls(walls) -> np.ndarray:
     return np.linalg.norm(np.roll(v, -1, 0) - v, axis=1)
 
 
-def _snap_walls(walls: list[Wall], wall_uv, wall_n, centroid, search=0.35, bin_m=0.005):
-    """Move each wall onto the measured surface: the dominant layer of vertical
-    points whose normal faces into the room, near the raster boundary."""
+def _snap_walls(
+    walls: list[Wall], wall_uv, wall_n, others: np.ndarray, frame: PlanFrame, search=0.35, bin_m=0.005
+):
+    """Move each wall onto the measured surface: a dense layer of vertical points
+    whose normal faces into the room. Furniture fronts sit inward of the wall, so
+    the outermost dense layer wins -- unless reaching it would sweep through space
+    that belongs to another room."""
     verts = _vertices(walls)
     for i, w in enumerate(walls):
         a, b = verts[i], verts[(i + 1) % len(walls)]
@@ -154,7 +173,7 @@ def _snap_walls(walls: list[Wall], wall_uv, wall_n, centroid, search=0.35, bin_m
         length = hi - lo
         if length < 0.3:
             continue
-        inward = np.sign(centroid[across] - w.coord)
+        inward = inward_sign(verts, i, across)
         m = (
             (np.abs(wall_uv[:, across] - w.coord) < search)
             & (wall_uv[:, along] > lo + 0.05)
@@ -166,19 +185,40 @@ def _snap_walls(walls: list[Wall], wall_uv, wall_n, centroid, search=0.35, bin_m
             continue
         hist, edges = np.histogram(x, bins=np.arange(w.coord - search, w.coord + search + bin_m, bin_m))
         hist = np.convolve(hist, [1, 2, 1], "same")
-        # candidate layers: furniture fronts sit inward of the wall, so prefer the
-        # outermost layer holding a solid share of the points
         strong = np.flatnonzero(hist >= 0.4 * hist.max())
         centers = edges[strong] + bin_m / 2
-        peak = centers[np.argmin(centers * inward)]
-        near = x[np.abs(x - peak) < 0.02]
+        peak = None
+        for cand in centers[np.argsort(centers * inward)]:  # outermost first
+            if _swept_fraction(others, frame, along, lo, hi, w.coord, cand) < 0.15:
+                peak = cand
+                break
+        if peak is None:
+            continue
+        sel = np.abs(x - peak) < 0.02
+        near = x[sel]
         coord = float(np.median(near))
-        cover = np.unique(np.floor(wall_uv[m, along][np.abs(x - peak) < 0.02] / 0.05))
+        cover = np.unique(np.floor(wall_uv[m, along][sel] / 0.05))
         w.coord = coord
         w.support = float(min(1.0, len(cover) * 0.05 / length))
         w.spread = float(1.4826 * np.median(np.abs(near - coord)))
         w.n_points = int(len(near))
         w.snapped = w.support >= 0.2
+
+
+def _swept_fraction(others, frame: PlanFrame, along, lo, hi, c0, c1) -> float:
+    """Share of the strip between wall positions c0 and c1 owned by other rooms."""
+    if abs(c1 - c0) < frame.res:
+        return 0.0
+    ta = np.arange(lo + 0.05, hi - 0.05, frame.res)
+    tc = np.arange(min(c0, c1), max(c0, c1), frame.res)
+    if len(ta) == 0 or len(tc) == 0:
+        return 0.0
+    A, C = np.meshgrid(ta, tc)
+    q = np.zeros((A.size, 2))
+    q[:, along], q[:, 1 - along] = A.ravel(), C.ravel()
+    r, c = frame.to_cell(q)
+    ok = (r >= 0) & (r < others.shape[0]) & (c >= 0) & (c < others.shape[1])
+    return float(others[r[ok], c[ok]].mean()) if ok.any() else 0.0
 
 
 def _layer(y: np.ndarray, bin_m=0.005) -> tuple[float, float, int]:
@@ -199,11 +239,9 @@ def fit_room(
     floor_y: float,
     vertical: np.ndarray,
     horizontal: np.ndarray,
+    others: np.ndarray | None = None,
 ) -> RoomLayout:
     walls = _rectilinear(_mask_contour(mask, frame))
-    inside_uv = frame.cell_center(*np.nonzero(mask))
-    centroid = inside_uv.mean(0)
-
     # wall points near this room at wall heights; normals in plan frame
     r, c = frame.to_cell(uv)
     ok = (r >= 0) & (r < mask.shape[0]) & (c >= 0) & (c < mask.shape[1])
@@ -213,8 +251,10 @@ def fit_room(
     h = P[:, 1] - floor_y
     sel = near_room & vertical & (h > 0.2) & (h < 2.2)
     n_uv = frame.to_plan(np.c_[N[sel, 0], np.zeros(sel.sum()), N[sel, 2]])
-    _snap_walls(walls, uv[sel], n_uv, centroid)
-    walls = _collapse(walls)
+    if others is None:
+        others = np.zeros_like(mask)
+    _snap_walls(walls, uv[sel], n_uv, others, frame)
+    walls = _ccw(_collapse(walls))
     room = RoomLayout(room_id, walls, _vertices(walls))
 
     in_room = np.zeros(len(P), bool)
@@ -263,7 +303,6 @@ def find_openings(
     top_h = (room.ceiling_height or 2.4) - 0.05
     h_all = P[:, 1] - floor_y
     verts = room.vertices
-    centroid = verts.mean(0)
     out: list[Opening] = []
     for i, w in enumerate(room.walls):
         a, b = verts[i], verts[(i + 1) % len(verts)]
@@ -272,7 +311,7 @@ def find_openings(
         if length < 0.5:
             continue
         direction = np.sign(b[along] - a[along])
-        outward = -np.sign(centroid[across] - w.coord)
+        outward = -inward_sign(verts, i, across)
         s = (uv[:, along] - a[along]) * direction  # distance from vertex a
         m = (np.abs(uv[:, across] - w.coord) < plane_tol) & (s > -0.05) & (s < length + 0.05)
         s, hh = s[m], h_all[m]
@@ -338,3 +377,61 @@ def ndi_close(mask: np.ndarray, k: int = 3) -> np.ndarray:
     from scipy import ndimage as ndi
 
     return ndi.binary_closing(mask, np.ones(k, bool)) | mask
+
+
+def _walls_from_polygon(coords: np.ndarray, originals: list[Wall]) -> list[Wall]:
+    """Rebuild a rectilinear wall list from polygon vertices, keeping the surface
+    statistics of any original wall the new edge still lies on."""
+    walls = []
+    for p, q in zip(coords, np.roll(coords, -1, 0)):
+        d = q - p
+        if np.hypot(*d) < 1e-6:
+            continue
+        axis = 0 if abs(d[0]) >= abs(d[1]) else 1
+        coord = float(p[1] if axis == 0 else p[0])
+        same = [w for w in originals if w.axis == axis and abs(w.coord - coord) < 0.01]
+        if same:
+            walls.append(Wall(axis, coord, same[0].support, same[0].spread, same[0].n_points, same[0].snapped))
+        else:
+            walls.append(Wall(axis, coord))
+    merged = []
+    for w in walls:
+        if merged and merged[-1].axis == w.axis:
+            continue
+        merged.append(w)
+    if len(merged) > 1 and merged[0].axis == merged[-1].axis:
+        merged.pop()
+    return _ccw(merged)
+
+
+def resolve_overlaps(rooms: list[RoomLayout], labels: np.ndarray, frame: PlanFrame) -> int:
+    """Hand each overlap to the room whose free-space region covers more of it and
+    cut it from the other. Returns the number of overlaps resolved."""
+    from shapely.geometry import MultiPolygon, Polygon
+
+    fixed = 0
+    for i in range(len(rooms)):
+        for j in range(i + 1, len(rooms)):
+            A, B = Polygon(rooms[i].vertices), Polygon(rooms[j].vertices)
+            inter = A.intersection(B)
+            if inter.area < 1e-4:
+                continue
+            minx, miny, maxx, maxy = inter.bounds
+            uu, vv = np.meshgrid(np.arange(minx, maxx, frame.res / 2), np.arange(miny, maxy, frame.res / 2))
+            q = np.c_[uu.ravel(), vv.ravel()]
+            r, c = frame.to_cell(q)
+            ok = (r >= 0) & (r < labels.shape[0]) & (c >= 0) & (c < labels.shape[1])
+            lab = labels[r[ok], c[ok]]
+            keep_i = (lab == rooms[i].id).sum() >= (lab == rooms[j].id).sum()
+            loser = rooms[j] if keep_i else rooms[i]
+            winner_poly = A if keep_i else B
+            cut = Polygon(loser.vertices).difference(winner_poly)
+            if isinstance(cut, MultiPolygon):
+                cut = max(cut.geoms, key=lambda p: p.area)
+            if cut.is_empty or cut.area < 0.2:
+                continue
+            coords = np.array(cut.exterior.coords)[:-1]
+            loser.walls = _walls_from_polygon(coords, loser.walls)
+            loser.vertices = _vertices(loser.walls)
+            fixed += 1
+    return fixed

@@ -11,7 +11,7 @@ import numpy as np
 from . import geometry as g
 from .cache import fused_cloud
 from .capture import Capture
-from .layout import Opening, RoomLayout, find_openings, fit_room
+from .layout import Opening, RoomLayout, find_openings, fit_room, inward_sign, resolve_overlaps
 from .plan import M, OpeningOut, PlanOut, RoomOut, WallOut, quad
 from .rooms import free_space, segment_rooms
 
@@ -72,7 +72,7 @@ def _room_out(room: RoomLayout, openings: list[Opening], labels, frame, adjacenc
         d = (b - a) / np.linalg.norm(b - a)
         mid = a + d * (o.start + o.width / 2)
         across = 1 - room.walls[o.wall].axis
-        outward = -np.sign(V.mean(0)[across] - room.walls[o.wall].coord)
+        outward = -inward_sign(V, o.wall, across)
         connects = None
         if o.kind == "door":
             for depth in (0.3, 0.5, 0.8):
@@ -139,10 +139,15 @@ def run(capture_dir: str | Path, cache_dir: str | Path = "out/cache") -> tuple[P
 
     labels, unvisited = segment_rooms(free, wall_raster, uv[wsel], wall_n, traj, frame)
 
+    lays = []
+    for rid in range(1, labels.max() + 1):
+        others = (labels > 0) & (labels != rid)
+        lays.append(fit_room(rid, labels == rid, frame, P, N, uv, floor_y, vertical, horizontal, others))
+    n_overlaps = resolve_overlaps(lays, labels, frame)
+
     adjacency: set[tuple[int, int]] = set()
     rooms_out, layouts = [], []
-    for rid in range(1, labels.max() + 1):
-        lay = fit_room(rid, labels == rid, frame, P, N, uv, floor_y, vertical, horizontal)
+    for lay in lays:
         ops = find_openings(lay, P, uv, free, frame)
         layouts.append((lay, ops))
         rooms_out.append(_room_out(lay, ops, labels, frame, adjacency))
@@ -168,6 +173,7 @@ def run(capture_dir: str | Path, cache_dir: str | Path = "out/cache") -> tuple[P
             "loop_gap_m": round(float(np.linalg.norm(traj[-1] - traj[0])), 3),
             "rooms_seen_not_entered": int(len(np.unique(unvisited)) - 1),
             "drift_correction": "none",
+            "overlaps_resolved": n_overlaps,
             "runtime_s": round(time.time() - t0, 1),
         },
     )

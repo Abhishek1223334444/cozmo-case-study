@@ -52,6 +52,12 @@ def process(capture, tier="lidar", out=None, drift=True, damage=False, max_frame
     from .evaluation import validate_geometry
     plan.quality["geometry_checks"] = validate_geometry(plan.to_json())
     plan.provenance["runtime_environment"] = {"python": sys.version.split()[0]}
+    import hashlib
+    source_hash=hashlib.sha256()
+    for file in sorted(Path(__file__).parent.iterdir()):
+        if file.suffix in {".py",".html",".json"}:
+            source_hash.update(file.name.encode());source_hash.update(file.read_bytes())
+    plan.provenance["implementation_sha256"]=source_hash.hexdigest()
     plan.diagnostics["total_runtime_s"] = round(time.time()-started, 3)
     plan.save(out/"plan.json")
     render(plan, out/"plan.png", debug.get("wall_uv"))
@@ -102,7 +108,8 @@ def main(argv=None):
                 print(fetch(kind,a.directory))
         elif a.command == "validate":
             from .evaluation import validate
-            print(json.dumps(validate(a.plan),indent=2))
+            result=validate(a.plan);print(json.dumps(result,indent=2))
+            return 0 if result["valid"] else 1
         elif a.command == "evaluate":
             from .evaluation import evaluate
             result = evaluate(json.loads(a.plan.read_text()),json.loads(a.truth.read_text()))

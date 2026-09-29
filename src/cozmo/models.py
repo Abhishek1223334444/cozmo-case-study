@@ -7,6 +7,7 @@ from PIL import Image
 
 DEPTH_ID = "depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf"
 DAMAGE_ID = "CIDAS/clipseg-rd64-refined"
+REVISIONS = {"depth":"8078d68a9c75a972131914f6afd0c1723be0da7f", "damage":"999e0328d9e10b484360c477313983f9afdd7050"}
 
 
 def fetch(kind, directory=Path("models")):
@@ -16,14 +17,16 @@ def fetch(kind, directory=Path("models")):
         url = "https://github.com/cvg/LightGlue/releases/download/v0.1_arxiv/sift_lightglue.pth"
         urllib.request.urlretrieve(url, folder/"sift_lightglue.pth")
         digest = hashlib.sha256((folder/"sift_lightglue.pth").read_bytes()).hexdigest()
+        if digest != "5b52b8d9982d43532dc042606b346bb9594c9f5a4bd6f64362c63866287b4ac0":
+            raise ValueError("Matcher weight checksum mismatch")
         (folder/"source.json").write_text(json.dumps({"url":url,"sha256":digest},indent=2))
         return folder
-    from huggingface_hub import snapshot_download, HfApi
+    from huggingface_hub import snapshot_download
     model_id = DEPTH_ID if kind == "depth" else DAMAGE_ID
-    revision = HfApi().model_info(model_id).sha
+    revision = REVISIONS[kind]
     folder = Path(directory) / kind
     snapshot_download(model_id, revision=revision, local_dir=folder,
-                      allow_patterns=["*.json", "*.txt", "*.safetensors", "pytorch_model.bin"])
+                      allow_patterns=["*.json", "*.txt", "*.safetensors"])
     (folder / "source.json").write_text(json.dumps({"repository": model_id, "revision": revision}, indent=2))
     return folder
 

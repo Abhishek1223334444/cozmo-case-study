@@ -6,6 +6,7 @@ reported as a measured room relationship.
 """
 from __future__ import annotations
 from dataclasses import dataclass
+from types import SimpleNamespace
 from pathlib import Path
 import hashlib
 import json
@@ -252,10 +253,77 @@ def room_from_points(points, normals, rid, name, tier):
     area = float(np.prod(hi - lo)); perim = sum(w.length.value for w in walls)
     ceilings = points[horizontal & (normals[:, 1] < 0) & (points[:, 1] > floor + 1.8), 1]
     height = float(np.median(ceilings) - floor) if len(ceilings) > 200 else None
-    return RoomOut(rid, name, polygon.tolist(), walls, M(area, area * relative * 2, "m2"),
+    room = RoomOut(rid, name, polygon.tolist(), walls, M(area, area * relative * 2, "m2"),
                    M(perim, perim * relative), M(height, max(.2, height * relative)) if height else None, [],
                    ["Envelope inferred from learned depth; furniture and unseen walls can bias extent."] +
                    (["Only a partial surface patch was reconstructed; this is not a complete room."] if min(hi-lo)<.5 else []))
+    room._floor_y = floor
+    return room
+
+
+def video_rooms(component, views, next_id):
+    """Segment learned RGB geometry using visibility and the reconstructed trajectory."""
+    from .rooms import free_space,segment_rooms
+    from .layout import fit_room,resolve_overlaps
+    component=sorted(component)
+    clouds=[cloud(views[i]) for i in component]
+    P=np.concatenate([p for p,n in clouds]);N=np.concatenate([n for p,n in clouds])
+    floor=g.find_floor(P,N)
+    vertical=abs(N[:,1])<.3;horizontal=abs(N[:,1])>.8
+    angle=g.manhattan_angle(N,vertical)
+    rawframe=g.PlanFrame(angle,np.zeros(2),.04,(1,1));uv=rawframe.to_plan(P)
+    frame=g.PlanFrame.fit(uv,angle,.04)
+    height=P[:,1]-floor
+    selected=vertical&(height>.25)&(height<2.1)
+    wall=frame.rasterize(uv[selected])>=4
+    class Adapter:
+        def __init__(self):
+            self.frames=[SimpleNamespace(T_wc=views[i].pose) for i in component]
+        def __len__(self):
+            return len(component)
+        def points_world(self,i,**kwargs):
+            p,n=clouds[i]
+            ok=np.linalg.norm(p-self.frames[i].T_wc[:3,3],axis=1)<kwargs.get("max_depth",5.)
+            return p[ok],n[ok]
+    adapter=Adapter()
+    free=free_space(adapter,frame,floor,None,frame_step=1)
+    wall_n=frame.to_plan(N[selected])
+    traj=frame.to_plan(np.array([views[i].pose[:3,3] for i in component]))
+    labels,_=segment_rooms(free,wall,uv[selected],wall_n,traj,frame,min_visit_frames=1,min_room_m2=.5)
+    if not labels.max():
+        return [],P,[]
+    layouts=[fit_room(int(k),labels==k,frame,P,N,uv,floor,vertical,horizontal) for k in range(1,labels.max()+1)]
+    resolve_overlaps(layouts,labels,frame)
+    rooms=[]
+    for lay in layouts:
+        verts=frame.to_world_xz(lay.vertices)
+        if len(verts)<3 or not Polygon(verts).is_valid or Polygon(verts).area<.25:
+            continue
+        rid=next_id+len(rooms)
+        walls=[]
+        for k,a in enumerate(verts):
+            b=verts[(k+1)%len(verts)];length=float(np.linalg.norm(b-a))
+            walls.append(WallOut(k,a.tolist(),b.tolist(),M(length,max(.15,length*.12)),False))
+        area=Polygon(verts).area;perimeter=sum(w.length.value for w in walls)
+        ceiling=lay.ceiling_height
+        room=RoomOut(rid,f"Observed room {rid}",verts.tolist(),walls,M(area,area*.24,"m2"),M(perimeter,perimeter*.12),
+                     M(ceiling,max(.2,ceiling*.12)) if ceiling and ceiling>0 else None,[],
+                     ["Room segmentation from learned RGB depth and estimated trajectory; structural accuracy unverified."])
+        room._floor_y=lay.floor_y if lay.floor_y is not None else floor
+        room._label_id=lay.id
+        rooms.append(room)
+    adjacency=[];mapping={r._label_id:r.id for r in rooms}
+    rr,cc=frame.to_cell(traj);last=None
+    for r,c in zip(rr,cc):
+        if 0<=r<labels.shape[0] and 0<=c<labels.shape[1]:
+            current=mapping.get(int(labels[r,c]))
+            if current and last and current!=last:
+                edge={"rooms":sorted([last,current]),"via":"inferred_visual_camera_transition"}
+                if edge not in adjacency:
+                    adjacency.append(edge)
+            if current:
+                last=current
+    return rooms,P,adjacency
 
 
 def run(path, tier, cache_dir=Path("out/cache"), model_dir=Path("models/depth"), max_frames=48, rotation=0, device="auto"):
@@ -267,7 +335,23 @@ def run(path, tier, cache_dir=Path("out/cache"), model_dir=Path("models/depth"),
         h, w = v.rgb.shape[:2]; f = .85 * max(w, h)
         v.K = np.array([[f, 0, w/2], [0, f, h/2], [0, 0, 1.]])
     components, edges, graph_report = register(views, Path(model_dir).parent/"matcher",cache_dir,tier)
+    discarded = []
+    if tier == "photos":
+        # One output room per input folder; preserve its strongest registered subset.
+        preferred = {name:max(range(len(components)),key=lambda k:sum(views[i].room==name for i in components[k]))
+                     for name in {v.room for v in views}}
+        kept = []
+        for k, component in enumerate(components):
+            subset = [i for i in component if preferred[views[i].room]==k]
+            discarded.extend(i for i in component if i not in subset)
+            if subset:
+                kept.append(subset)
+        components = kept
+    elif any(len(c)>=3 for c in components):
+        discarded=[i for c in components if len(c)<3 for i in c]
+        components=[c for c in components if len(c)>=3]
     rooms, cloud_parts, room_components, observations = [], [], {}, []
+    adjacency=[]
     display_offset = 0.
     for ci, component in enumerate(components):
         level(component, views)
@@ -277,6 +361,19 @@ def run(path, tier, cache_dir=Path("out/cache"), model_dir=Path("models/depth"),
             for i in component:
                 views[i].pose[0,3] += shift
             display_offset = float(np.max(all_points[:,0]))+shift+1.5
+        if tier=="video" and len(component)>=4:
+            try:
+                segmented,P,links=video_rooms(component,views,len(rooms)+1)
+            except (ValueError,IndexError):
+                segmented=[]
+            if segmented:
+                for room in segmented:
+                    rooms.append(room);room_components[room.id]=ci
+                    observations.extend((i,room.id) for i in component)
+                    if len(components)>1:
+                        room.notes.append("Display placement only: component disconnected from other regions.")
+                cloud_parts.append(P);adjacency.extend(links)
+                continue
         # Keep each photo folder a room; a video component is an observed envelope.
         groups = {}
         for i in component:
@@ -301,19 +398,24 @@ def run(path, tier, cache_dir=Path("out/cache"), model_dir=Path("models/depth"),
             if intersection > .1:
                 overlaps.append({"rooms": [a.id, b.id], "area_m2": round(intersection, 3)})
     warnings = ["Learned metric scale and assumed focal length are not independently calibrated.",
-                "RGB layout is an experimental room-envelope baseline; openings are not inferred."]
+                "RGB layout is an experimental learned-depth baseline; openings are not inferred."]
     if len(components) > 1:
         warnings.append("Visual overlap did not connect all inputs; component offsets are for display only.")
     if overlaps:
         warnings.append("Inferred room envelopes overlap; a valid whole-property stitch is not established.")
-    plan = PlanOut(Path(path).stem, tier, rooms, [], M(area, sum(r.floor_area.sigma for r in rooms), "m2"),
+    if discarded:
+        warnings.append(f"{len(discarded)} input views lacked sufficient registration support and were excluded from geometry.")
+    plan = PlanOut(Path(path).stem, tier, rooms, adjacency, M(area, sum(r.floor_area.sigma for r in rooms), "m2"),
                    {"units": "m", "vertical": "estimated from upright RGB", "component_ids": room_components},
                    diagnostics={"frames": len(views), "registered_edges": len(edges), "components": len(components),
-                                "pose_graph": graph_report, "overlaps": overlaps, "runtime_s": time.time()-started},
+                                "pose_graph": graph_report, "overlaps": overlaps, "excluded_views": [views[i].name for i in discarded], "runtime_s": time.time()-started},
                    quality={"status": "experimental", "metric_scale": "learned_prior", "warnings": warnings,
-                            "stitch_status": "unresolved" if len(components)>1 or overlaps or tier=="video" else "registered_rooms_adjacency_unverified",
+                            "footprint_status": "sum_of_observed_envelopes_not_verified_property_footprint",
+                            "stitch_status": "unresolved" if len(components)>1 or overlaps else "registered_rooms_adjacency_unverified",
                             "interval_calibration": "unvalidated_without_independent_ground_truth"},
                    provenance={"model": depth_model.source, "input_modalities": ["rgb"],
                                "sensor_sidecars_used": False, "rotation_clockwise_degrees": rotation,
                                "input_fingerprint": hashlib.sha256(b"".join(v.rgb.tobytes() for v in views)).hexdigest()})
-    return plan, {"wall_uv": np.concatenate(cloud_parts)[:, [0, 2]], "views": views, "observations": observations}
+    used = sorted({i for i,_ in observations})
+    return plan, {"wall_uv": np.concatenate(cloud_parts)[:, [0, 2]], "views": [views[i] for i in used], "observations": observations,
+                  "room_floor_y": {r.id:r._floor_y for r in rooms}}

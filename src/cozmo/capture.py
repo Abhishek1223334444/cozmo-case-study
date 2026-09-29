@@ -44,8 +44,10 @@ class Capture:
             root = subs[0]
         self.root = root
         video = cv2.VideoCapture(str(root / "rgb.mp4"))
-        self.rgb_w = int(video.get(cv2.CAP_PROP_FRAME_WIDTH)) or RGB_W
-        self.rgb_h = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT)) or RGB_H
+        width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.rgb_w = width if width > 0 else RGB_W
+        self.rgb_h = height if height > 0 else RGB_H
         video.release()
         self.frames = self._load_odometry()
         if not self.frames:

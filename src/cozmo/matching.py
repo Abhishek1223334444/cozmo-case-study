@@ -14,6 +14,7 @@ class Matcher:
         state = torch.load(Path(directory)/"sift_lightglue.pth",map_location="cpu",weights_only=True)
         for i in range(self.model.conf.n_layers):
             state = {k.replace(f"self_attn.{i}",f"transformers.{i}.self_attn").replace(f"cross_attn.{i}",f"transformers.{i}.cross_attn"):v for k,v in state.items()}
+        state.setdefault("confidence_thresholds",self.model.confidence_thresholds)
         self.model.load_state_dict(state,strict=True)
         self.source = json.loads((Path(directory)/"source.json").read_text())
         extractor = SIFT(max_num_keypoints=1024).eval()

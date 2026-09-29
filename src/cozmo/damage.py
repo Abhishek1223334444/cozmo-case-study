@@ -83,9 +83,14 @@ def assess(plan, debug, out, model_dir=Path("models/damage"), max_views=12, devi
                 if plan.tier == "lidar":
                     uv = debug["frame"].to_plan(p); height = p[:, 1] - plan.frame["floor_world_y"]
                 else:
-                    uv = p[:, [0,2]]; height = p[:, 1] - float(np.percentile(p[:,1], 2))
+                    uv = p[:, [0,2]]; height = None
                 best = None
                 for room in plan.rooms:
+                    if plan.tier != "lidar":
+                        floor = debug.get("room_floor_y",{}).get(room.id)
+                        if floor is None:
+                            continue
+                        height = p[:,1]-floor
                     for wall in room.walls:
                         a, b = np.array(wall.start), np.array(wall.end); direction = (b-a) / wall.length.value
                         along = (uv-a) @ direction

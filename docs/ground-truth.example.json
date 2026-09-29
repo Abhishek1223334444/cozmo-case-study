@@ -1,0 +1,12 @@
+{
+  "source": "laser",
+  "instructions": "Replace null with independent measured metres/metres². Keys must be matched to the physical room/wall in the predicted plan. This file contains no measurements.",
+  "openings_exhaustive": false,
+  "lidar_wall_tolerance_m": null,
+  "measurements": {
+    "room-1/wall-0/length": null,
+    "room-1/ceiling_height": null,
+    "room-1/floor_area": null,
+    "footprint_area": null
+  }
+}

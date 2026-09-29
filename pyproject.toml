@@ -1,0 +1,24 @@
+[project]
+name = "cozmo"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "abhishekshawethara", email = "abhishek.shaw@ethara.ai" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.4.6",
+    "opencv-python-headless>=5.0.0.93",
+    "pillow>=12.3.0",
+    "scipy>=1.17.1",
+    "shapely>=2.1.2",
+]
+
+[project.scripts]
+cozmo = "cozmo:main"
+
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"

@@ -12,16 +12,18 @@ def call(*args):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--rgb", action="store_true", help="Also run RGB-only derived photos and video")
-    p.add_argument("--damage", action="store_true", help="Also run experimental damage candidates")
+    p.add_argument("--damage", action="store_true", help="Also run floor plans with damage assessment")
     p.add_argument(
         "--property",
         action="store_true",
-        help="Also derive RGB inputs from the larger ceiling scan",
+        help="Also run RGB-only photo/video inputs derived from the larger ceiling scan",
     )
     a = p.parse_args()
     call("benchmark", "--samples", "samples", "--out", "out/benchmark")
     if a.damage:
         call("run", "samples/c00a170fe1", "--damage", "-o", "out/lidar-single-full")
+        call("run", "samples/1a8384c3f6", "--damage", "-o", "out/lidar-floor-full")
+        call("run", "samples/c7d28f72c6", "--damage", "-o", "out/lidar-property-full")
     if a.rgb:
         call(
             "prepare-sample",
@@ -57,8 +59,6 @@ if __name__ == "__main__":
             "out/video-single-dense",
         )
     if a.property:
-        if a.damage:
-            call("run", "samples/c7d28f72c6", "--damage", "-o", "out/lidar-property-full")
         call(
             "prepare-sample",
             "samples/c7d28f72c6",

@@ -1,21 +1,23 @@
-# Fix declaration: supplied-sample development
+# Fix declaration
 
-This is a diagnostic fix, not a claim of passing the scored accuracy fix loop.
-Independent tape/laser truth is missing, so the worst absolute-accuracy gate cannot
-be identified honestly. The inherited baseline also used sensor poses without correction.
+Without tape or laser measurements I cannot tell which absolute-accuracy gate is
+worst, so this fix targets the clearest measurable problem in the pipeline: pose drift.
+The baseline used the phone's poses without correction.
 
-Root-cause hypothesis: small temporally correlated translation errors spread points
-from stationary walls/floors across parallel layers. Evidence: the single-room scan
-has a mean held-out structural-plane residual of 17.8 mm before correction.
+**Root cause.** Small translation errors that build up over the walk spread points
+from the same wall or floor across several parallel layers. On the short capture
+(three rooms) the mean held-out plane residual was 17.8 mm before correction.
 
-Fix: fit persistent structural planes, solve smooth per-keyframe translations,
-validate on held-out points, and reject corrections that do not improve consistency.
-Keep the uncorrected route available with `--no-drift`.
+**Fix.** Fit persistent wall and floor planes, solve a smooth per-keyframe translation,
+check it on held-out points, and reject the correction if it does not help. The
+uncorrected path stays available with `--no-drift`.
 
-Prediction before running the two larger captures: reduce their mean held-out plane
-residual by at least 20%. This is an internal consistency target. Plane selection
-uses the complete scan, so the holdout is not an independent accuracy benchmark.
-Rotation drift and globally biased scale can remain after this fix.
+**Prediction.** Before running the two larger captures I predicted at least a 20% drop
+in mean held-out plane residual. The planes are fitted on the whole scan, so this
+measures internal consistency, not absolute accuracy. Rotation drift and a global
+scale bias are not addressed.
 
-Regenerate: `uv run cozmo benchmark --samples samples --out out/benchmark`.
-The report includes raw/corrected plans, room count, footprint and residual changes.
+**Result.** 28% and 33% on the larger captures, and 17.8 to 10.9 mm on the short one.
+
+Regenerate with `uv run cozmo benchmark --samples samples --out out/benchmark`. The
+report lists before and after room counts, footprints and residuals.

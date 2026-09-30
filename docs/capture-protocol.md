@@ -1,4 +1,4 @@
-# Capture protocol — stock apps, no custom iPhone app
+# Capture protocol: stock apps, no custom iPhone app
 
 The supplied Stray Scanner ZIPs are sufficient to run development without an iPhone.
 This page describes the proposed walk-in capture route; it has not been field-tested
@@ -15,7 +15,7 @@ into mirrors or windows. Export originals into `photos/<room-name>/`.
 
 Run `uv run cozmo run photos --tier photos -o out/new-photos`.
 The 2-image case can be attempted but is frequently underconstrained. Missing visual
-connections produce separate, explicitly unplaced components. Learned metric scale
+connections produce separate components that are not placed relative to each other. Learned metric scale
 is a prior and has not met the ±8% accuracy requirement on independent measurements.
 
 ## Video: native Camera
@@ -34,7 +34,7 @@ required for the supplied raw Stray Scanner RGB streams, not necessarily native 
 
 Install [Stray Scanner](https://github.com/strayrobots/scanner) using its App Store
 link on a LiDAR-equipped iPhone Pro. Start one continuous recording. Walk through
-all rooms and connectors, look at each wall and opening, and explicitly sweep
+all rooms and connectors, look at each wall and opening, and deliberately sweep
 both the floor and ceiling. Stay roughly 0.5–4 m from surfaces. Complete a loop back
 to the starting room. Do not pause and resume unrelated coordinate systems.
 

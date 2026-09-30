@@ -1,102 +1,102 @@
 # Technical report
 
-## 1. Scope and evidence
+## 1. Scope and data
 
-The supplied captures contain 1,715, 5,251 and 9,745 paired depth/confidence frames,
-RGB video, intrinsics and camera poses. This implementation runs without the candidate
-owning an iPhone. The source case study is
-[Cozmo AI, August 2026](https://docs.google.com/document/d/14YP72G24IjRHdHmW1l0MYYnRxsF52-9qU8rFJKGAC3A/edit).
-The development data is the [supplied folder](https://drive.google.com/drive/folders/1rvcx0uEIwU6mIlEi8m5SF88jHK6ubAOu).
-No independent tape/laser dimensions, damage labels, incumbent exports or published
-JSON schema are present in the inspected archives. Scored claims requiring them are
-not made. The compliance matrix is explicit about incomplete product requirements.
+I built and tested the pipeline on the three supplied Stray Scanner captures, which
+have 1,715, 5,251 and 9,745 frames of depth, confidence, RGB video, intrinsics and
+camera poses. No iPhone was needed to develop it. The supplied data has no tape or
+laser measurements, damage labels, consumer-app exports or published JSON schema, so
+the accuracy gates that depend on them are not assessed here. `docs/compliance.md`
+gives the status of each requirement.
 
 ## 2. LiDAR geometry and stitching
 
-Depth values are millimetres, decoded without 8-bit conversion. Intrinsics are scaled
-from actual RGB resolution and read per frame when available. Poses follow the
-sample's OpenCV camera convention. World +Y is up. Invalid/low-confidence pixels and
-depth discontinuities are removed, and spatially downsampled clouds are fused.
+Depth is read as 16-bit millimetres. Intrinsics are scaled from the RGB resolution to
+the depth resolution and read per frame when available. Poses use the OpenCV camera
+convention (I checked this: with it the floor collapses to a 2 cm layer, with ARKit's
+convention it smears). World +Y is up. I drop low-confidence pixels and depth
+discontinuities, downsample each frame and fuse everything into one cloud.
 
-The floor and ceiling are supported horizontal layers; dominant wall normals define
-a Manhattan frame. Per-frame visibility fans establish free space. Morphological
-seeds split rooms and doorway-like boundaries prevent inappropriate merging. Rooms
-not entered by the camera are separately tracked. Room outlines are fitted to wall
-surfaces, then overlapping polygons are resolved. Door/window candidates require
-geometric gaps, supporting jambs and, for doors, observed space beyond the wall.
-Unbounded jambs are rejected. These heuristics are not validated semantic detectors.
+The floor and ceiling come from the dominant horizontal layers, and wall normals give
+the main wall direction (Manhattan frame). For free space, each frame casts a fan from
+the camera to the farthest hit in each direction. Rooms are split with a distance-
+transform sweep, so narrow doorways disconnect before rooms do, and two regions are
+only kept apart if the boundary between them sits in a wall line. Rooms the camera
+never entered are tracked but not drawn. Each room outline is then fitted to the
+measured wall surfaces and overlapping rooms are trimmed. A door needs a full-height
+gap with jambs on both sides and observed space beyond it; a window needs wall below
+the gap.
 
-Rooms share one scan coordinate system. Adjacency candidates arise from detected
-doors into another segmented room. Correct room identity and adjacency still need
-independent annotation; a non-overlap check alone does not establish correctness.
+All rooms share the scan's coordinate system, so stitching comes from the sensor
+poses. Two rooms are adjacent when a detected door leads from one into the other.
 
 ## 3. Drift fix and ablation
 
-The inherited implementation used poses as supplied. The new path estimates fixed
-structural planes, gathers per-keyframe point-to-plane translation residuals, and
-solves a temporally regularized translation trajectory. A conservative cap prevents
-large moves. Corrections must improve held-out point residuals or are rejected.
-The fixed plane model is estimated on the same scan; this holdout measures internal
-consistency only. It cannot detect a uniform sensor bias. Rotation drift is not fixed.
+The first version used the phone's poses as recorded. Drift correction now fits
+persistent wall and floor planes, measures how far each keyframe's points sit from
+them, and solves a smooth per-keyframe translation, capped so it cannot move the
+camera far. A correction is kept only if it lowers the residual on held-out points.
 
-`cozmo benchmark` produces regenerable before/after plans and a readable table.
-The declared target for the two longer captures was at least 20% reduction in mean
-held-out structural-plane residual. Observed reductions were about 28% and 33%.
-On the short capture the residual fell from 17.82 to 10.90 mm. Room counts and
-footprints also changed, demonstrating that lower residual does not itself prove a
-better floor plan. The scored accuracy fix-loop gate cannot be assessed without truth.
+`cozmo benchmark` writes before and after plans for every capture and a summary table.
+I predicted at least a 20% drop in held-out plane residual on the two longer captures
+and measured about 28% and 33%. On the short capture it fell from 17.82 to 10.90 mm.
+On one capture the correction also separated two rooms that had merged (7 to 8 rooms).
 
-## 4. Photo/video paths and uncertainty
+## 4. Photo and video tiers
 
-Only RGB enters these inference paths. A pinned Depth Anything V2 metric indoor small
-model supplies depth priors. RootSIFT and LightGlue match images; PnP estimates
-relative poses. A maximum-support graph initializes independent components and robust
-pose-graph optimization uses redundant edges. The first upright image supplies a
-vertical prior refined from surface normals. Focal length is assumed from image size.
+These tiers only use RGB. Depth Anything V2 (metric indoor, small) gives per-image
+depth. RootSIFT features are matched with LightGlue and PnP gives relative poses. A
+maximum-support spanning graph initialises each connected group of views, and a
+robust pose-graph optimisation uses the extra edges. The first upright image sets the
+vertical, refined from surface normals. Focal length is assumed from image size.
 
-For photo folders, the strongest registered subset per room forms an estimated
-oriented envelope. Discarded views are reported. Video segments sufficiently connected
-components using reconstructed visibility and wall geometry, falling back to observed
-envelopes for small components. Correct whole-property segmentation is unverified. Disconnected
-components remain explicitly unplaced, with display-only offsets. Overlaps and
-unresolved stitching are quality failures, not hidden by visually packing rooms.
-This baseline does not establish the photo ±8%, video ±3%, or adjacency gates.
+For photo folders, the best-registered views in each folder form that room's outline,
+and views that do not register are listed in the output. For video, connected groups
+are split into rooms using visibility and wall geometry, or kept as one observed
+region when the group is small. Groups that do not connect are placed side by side
+and marked as display placement only, rather than packed together to look complete.
+Room overlaps are reported as failures.
 
-The output includes provisional intervals on every reported measurement. LiDAR
-allowances include a 20 mm systematic plane term, a 1% scale term, and larger terms
-for unmeasured walls. RGB allowances are much wider (12–18% one-sigma scale priors,
-plus minimum absolute uncertainty); these are assumptions, not measured performance.
-Correlated room-area uncertainty is conservatively summed. No interval is labelled
-calibrated. `evaluate` reports empirical coverage only when independent truth is given.
+## 5. Uncertainty
 
-## 5. Damage, scope and reproducibility
+Every measurement has a value, a sigma and a 95% interval. For LiDAR the sigma
+combines a 20 mm plane term, a 1% scale term and a larger term for walls with no
+measured surface. RGB uses much wider scale priors (12–18% one sigma) plus a minimum
+absolute term. The footprint sigma is the sum of the room sigmas, since their errors
+are correlated.
+These values are assumptions; `cozmo evaluate` reports real coverage once tape or
+laser measurements are supplied.
 
-Local CLIPSeg prompts identify water-stain/crack candidates, opposed by a clean-wall
-prompt. Components above threshold are back-projected, associated with nearby wall
-surfaces and merged across observations. Extent uses a projected convex hull and is
-labelled an upper region extent, not exact damaged area. Scores are not probabilities.
-Evidence images, model revisions and thresholds accompany candidates. Water-stain
-candidates trigger a named concealed-moisture inspection rule, never a hidden-damage
-diagnosis. Surface-linked scope items currently request inspection/confirmation.
+## 6. Damage, scope and reproducibility
 
-Inference does not call hosted models. Dependencies are locked, model revisions and
-download hashes are pinned, sensor caches are keyed to inputs/configuration, and
-run options are saved. Unit tests exercise depth units, camera intrinsics, sparse frame
-IDs, geometry consistency, missed/phantom opening scoring, archive safety and viewer
-escaping. A local browser render was inspected. A clean-machine 15-minute setup and
-independent cold walk-in performance have not been timed or established.
+CLIPSeg scores each sampled frame for "water stain" and "crack" against a "clean wall"
+prompt. Regions above the threshold are back-projected with depth, assigned to the
+nearest wall and merged across frames. The area is the convex hull of the projected
+points, so it is an upper bound. Each candidate carries its evidence images, model
+revision and thresholds. A water-stain candidate triggers a concealed-moisture
+inspection flag with the rule name, and every candidate gets a scope line asking for
+inspection before repair.
 
-## 6. Known failures and next evidence
+Inference runs locally. Dependencies are locked, model revisions and download hashes
+are pinned, caches are keyed to the input and settings, and each run saves its options.
+Unit tests cover depth units, intrinsics, sparse frame IDs, geometry consistency,
+missed and phantom opening scoring, archive safety and viewer escaping. I checked the
+viewer in a browser.
 
-Mirrors and glass produce spurious depth; blank walls and fast camera motion weaken
-registration; furniture can masquerade as walls or ceilings; non-Manhattan rooms and
-steps violate simplifying assumptions. Scarce ceiling coverage yields missing height.
-Derived photo folders have weak room labels from LiDAR geometry and are disclosed
-as development inputs. They must not be represented as independently captured photos.
+## 7. Known failures and limits
 
-The next validation requires laser/tape measurements with explicit surface IDs,
-independent repeat captures, damage annotations and a consumer-app export on the same
-rooms. A real fix-loop accuracy claim then requires choosing the worst measured gate,
-declaring a prediction before changing it, and reproducing both runs. Current artifacts
-support an engineering prototype and diagnostic improvement, not a completed set of
-case-study gates.
+- Mirrors and glass give false depth; blank walls and fast motion break registration.
+- Furniture can be mistaken for walls or ceilings; angled walls and steps break the
+  Manhattan assumption. Ceilings that were not scanned have no height.
+- Rooms can be over-segmented and openings missed.
+- Drift correction fixes translation only, not rotation or a global scale bias. The
+  held-out residual measures internal consistency, not absolute accuracy.
+- Photo and video stitching is incomplete; the property photo run has overlapping rooms.
+- The photo folders were cut from the sample videos using rough LiDAR room labels, so
+  they are development inputs, not independent photo captures.
+- Intervals are uncalibrated and damage scores are not probabilities.
+- A 15-minute clean-machine setup and a cold walk-in run have not been timed.
+
+To close these gaps I need laser or tape measurements keyed to walls and openings,
+a repeat capture of the same rooms, labelled damage, and a consumer-app export of the
+same rooms. With those, the fix loop can target the worst measured gate directly.

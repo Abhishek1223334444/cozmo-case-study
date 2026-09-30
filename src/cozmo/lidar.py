@@ -15,13 +15,12 @@ from .layout import Opening, RoomLayout, find_openings, fit_room, inward_sign, r
 from .plan import M, OpeningOut, PlanOut, RoomOut, WallOut, quad
 from .rooms import free_space, segment_rooms
 
-RES = 0.02  # plan raster, m
+RES = 0.02
 
-# Error model priors (1-sigma). To be calibrated against tape/laser ground truth.
-SIGMA_SURFACE_SYS = 0.02  # provisional systematic allowance, not calibrated accuracy
-SIGMA_UNMEASURED = 0.05  # wall placed from free-space raster only
-SCALE_REL = 0.01  # provisional relative scale allowance
-SIGMA_JAMB = 0.008  # one jamb edge located from surface points
+SIGMA_SURFACE_SYS = 0.02
+SIGMA_UNMEASURED = 0.05
+SCALE_REL = 0.01
+SIGMA_JAMB = 0.008
 SIGMA_JAMB_WEAK = 0.03
 
 
@@ -38,7 +37,6 @@ def _room_out(room: RoomLayout, openings: list[Opening], labels, frame, adjacenc
     lengths = room.wall_lengths
     walls = []
     for i in range(k):
-        # length of wall i is set by its two perpendicular neighbours
         s = quad(sig[(i - 1) % k], sig[(i + 1) % k], SCALE_REL * lengths[i])
         walls.append(
             WallOut(
@@ -168,7 +166,7 @@ def run(
         rooms_out.append(_room_out(lay, ops, labels, frame, adjacency))
 
     footprint = sum(r.floor_area.value for r in rooms_out)
-    footprint_sigma = sum(r.floor_area.sigma for r in rooms_out)  # shared scale/bias is correlated
+    footprint_sigma = sum(r.floor_area.sigma for r in rooms_out)
     path_len = float(np.linalg.norm(np.diff(traj, axis=0), axis=1).sum())
     plan = PlanOut(
         capture=cap.root.name,

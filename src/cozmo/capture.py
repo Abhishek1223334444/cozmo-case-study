@@ -29,14 +29,13 @@ RGB_W, RGB_H = 1920, 1440
 class Frame:
     index: int
     timestamp: float
-    T_wc: np.ndarray  # 4x4 camera-to-world, OpenCV camera convention
-    K_rgb: np.ndarray  # 3x3 intrinsics at RGB resolution
+    T_wc: np.ndarray
+    K_rgb: np.ndarray
 
 
 class Capture:
     def __init__(self, root: str | Path):
         root = Path(root)
-        # Accept either the capture folder itself or a parent holding exactly one capture.
         if not (root / "odometry.csv").exists():
             subs = [p for p in root.iterdir() if (p / "odometry.csv").exists()]
             if len(subs) != 1:
@@ -123,7 +122,7 @@ class Capture:
         n = np.cross(du, dv)
         n /= np.linalg.norm(n, axis=-1, keepdims=True) + 1e-12
         Pc = P[1:-1, 1:-1]
-        n[(n * Pc).sum(-1) > 0] *= -1  # face the camera
+        n[(n * Pc).sum(-1) > 0] *= -1
 
         dc = d[1:-1, 1:-1]
         neigh = np.stack([d[1:-1, 2:], d[1:-1, :-2], d[2:, 1:-1], d[:-2, 1:-1]], -1)

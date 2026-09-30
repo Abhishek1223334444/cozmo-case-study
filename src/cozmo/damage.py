@@ -89,8 +89,6 @@ def assess(plan, debug, out, model_dir=Path("models/damage"), max_views=12, devi
             if not ok:
                 continue
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-            # Stray RGB is landscape sensor orientation; infer in upright orientation,
-            # then rotate the mask back before using sensor intrinsics.
             observations.append(
                 (
                     str(cap.frames[i].index),
@@ -190,7 +188,6 @@ def assess(plan, debug, out, model_dir=Path("models/damage"), max_views=12, devi
                         "evidence": f"evidence/{filename}",
                     }
                 )
-    # Merge overlapping same-class observations on the same surface to avoid double counting.
     for surface_id, klass in sorted({(r["surface_id"], r["class"]) for r in regions}):
         rs = [r for r in regions if r["surface_id"] == surface_id and r["class"] == klass]
         union = unary_union([r["polygon"] for r in rs])

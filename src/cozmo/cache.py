@@ -19,7 +19,6 @@ def fused_cloud(cap: Capture, cache_dir: str | Path = "out/cache", voxel: float 
     P, N, C = voxel_downsample(P, N, voxel)
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path, P=P.astype(np.float32), N=N.astype(np.float32), C=C.astype(np.int32))
-    # Use the serialized precision on the cold path as well as cache replay.
     return (
         P.astype(np.float32).astype(np.float64),
         N.astype(np.float32).astype(np.float64),

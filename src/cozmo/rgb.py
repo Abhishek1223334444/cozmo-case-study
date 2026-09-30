@@ -73,7 +73,6 @@ def read_views(path, tier, max_frames=48, rotation=0):
             if path.is_file()
             else sorted(p for p in path.rglob("*") if p.suffix.lower() in extensions)
         )
-        # Input is deliberately images only, never a Stray Scanner folder.
         if path.is_dir() and list(path.rglob("odometry.csv")):
             raise ValueError(
                 "Photo tier requires an isolated photo folder; use prepare-sample first"
@@ -134,7 +133,6 @@ def match(a, b, correspondences=None):
     if not ok or inliers is None or len(inliers) < 10 or len(inliers) < 0.2 * len(pa):
         return None
     ids = inliers[:, 0]
-    # Require spatial support, not a tiny patch or repeated cabinet handle.
     if np.ptp(pb[ids], axis=0).prod() < b.rgb.shape[0] * b.rgb.shape[1] * 0.02:
         return None
     r, t = cv2.solvePnPRefineLM(xyz[ids], pb[ids], b.K, None, r, t)
@@ -171,7 +169,6 @@ def register(views, matcher_dir=None, cache_dir=Path("out/cache"), tier="photos"
                 edges.append((i, j, T, count, error))
         if learned and (i + 1) % 8 == 0:
             print(f"  registration {i + 1}/{len(views)} views, {len(edges)} edges", flush=True)
-    # Maximum-support spanning forest establishes each independent coordinate frame.
     remaining = set(range(len(views)))
     components = []
     while remaining:
@@ -282,7 +279,6 @@ def cloud(view, step=4):
 
 def level(component, views):
     pts, normals = cloud(views[component[0]])
-    # First image is assumed upright. Infer a nearby vertical direction from normals.
     up = np.array([0.0, -1.0, 0.0])
     near = normals[normals @ up > 0.88]
     if len(near) > 100:
@@ -471,7 +467,6 @@ def run(
     )
     discarded = []
     if tier == "photos":
-        # One output room per input folder; preserve its strongest registered subset.
         preferred = {
             name: max(
                 range(len(components)),
@@ -517,7 +512,6 @@ def run(
                 cloud_parts.append(P)
                 adjacency.extend(links)
                 continue
-        # Keep each photo folder a room; a video component is an observed envelope.
         groups = {}
         for i in component:
             groups.setdefault(views[i].room, []).append(i)

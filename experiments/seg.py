@@ -17,7 +17,6 @@ for k, n in enumerate(names):
     floor = frame.rasterize(uv[horiz & (np.abs(h)<0.03)])>0
     wall = frame.rasterize(uv[vert & (h>0.2) & (h<2.0)])>=3
     traj = frame.to_plan(np.array([f.T_wc[:3,3] for f in cap.frames]))
-    # interior: floor seen, closed and hole-filled, walls removed
     interior = ndi.binary_closing(floor, np.ones((7,7)))
     interior = ndi.binary_fill_holes(interior) & ~ndi.binary_dilation(wall, np.ones((3,3)))
     lab,_ = ndi.label(interior); r,c = frame.to_cell(traj)
@@ -28,7 +27,6 @@ for k, n in enumerate(names):
     sizes = ndi.sum(np.ones_like(dist), seeds, range(1,ns+1))*RES*RES
     for i,s in enumerate(sizes,1):
         if s<0.3: seeds[seeds==i]=0
-    # geodesic assignment: nearest seed via watershed on -dist
     import cv2
     markers = seeds.astype(np.int32); markers[~interior]=-1
     img = np.dstack([(255*(1-dist/dist.max())).astype(np.uint8)]*3)

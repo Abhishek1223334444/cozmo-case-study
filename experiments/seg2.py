@@ -19,7 +19,6 @@ def free_space(cap, frame, fy, cy, step=5, nbins=180):
         if len(occ)<3: continue
         a = (occ+0.5)/nbins*2*np.pi-np.pi
         pts = cam + np.stack([np.cos(a),np.sin(a)],1)*far[occ,None]
-        # fan triangles only between adjacent occupied bins
         mask = np.zeros(frame.shape, np.uint8)
         cc = ((cam-frame.origin)/RES)
         pp = ((pts-frame.origin)/RES)

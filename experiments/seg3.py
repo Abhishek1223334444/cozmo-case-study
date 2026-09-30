@@ -41,19 +41,17 @@ def boundary_is_door(ws, a, b, wuv, wn, frame):
     rr, cc = np.nonzero(cut)
     pts = frame.cell_center(rr, cc)
     ext = pts.max(0)-pts.min(0)
-    ax = int(np.argmax(ext))             # cut runs along plan axis `ax`
+    ax = int(np.argmax(ext))
     width = ext[ax]
     lo, hi = pts[:,ax].min(), pts[:,ax].max()
     mid = np.median(pts[:,1-ax])
-    face_parallel = np.abs(wn[:, 1-ax]) > 0.8   # normal across the cut line -> face runs along it
+    face_parallel = np.abs(wn[:, 1-ax]) > 0.8
     ends = []
     for sgn, e in ((-1, lo), (1, hi)):
         along = (wuv[:,ax]-e)*sgn
         m = face_parallel & (along>0.02) & (along<0.40) & (np.abs(wuv[:,1-ax]-mid)<0.25)
         span = np.ptp(wuv[m,ax]) if m.sum()>20 else 0.0
         ends.append(span)
-    # door in a wall line: wall continues past both jambs; door beside a corner:
-    # wall continues past one jamb and the opening is door-sized
     door = min(ends) > 0.08 or (max(ends) > 0.08 and width < 1.3)
     return door, width, ends
 def merge_non_doors(ws, wuv, wn, frame, verbose=False):
@@ -76,7 +74,7 @@ def visited_only(ws, frame, cap):
     r,c = frame.to_cell(traj)
     ok = (r>=0)&(r<ws.shape[0])&(c>=0)&(c<ws.shape[1])
     ids, cnt = np.unique(ws[r[ok],c[ok]], return_counts=True)
-    keep = ids[(ids>0)&(cnt>=30)]      # >=0.5 s of walking inside
+    keep = ids[(ids>0)&(cnt>=30)]
     return np.where(np.isin(ws, keep), ws, 0), traj
 names = sys.argv[1:] or ['c00a170fe1','1a8384c3f6','c7d28f72c6']
 fig, axs = plt.subplots(1, len(names), figsize=(7*len(names), 7), squeeze=False)

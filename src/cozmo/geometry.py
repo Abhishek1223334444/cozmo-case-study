@@ -12,8 +12,8 @@ from dataclasses import dataclass
 import numpy as np
 from scipy import ndimage as ndi
 
-HORIZONTAL_NY = 0.9  # |n_y| above this: floor/ceiling-like surface
-VERTICAL_NY = 0.15  # |n_y| below this: wall-like surface
+HORIZONTAL_NY = 0.9
+VERTICAL_NY = 0.15
 
 
 def _peak_refine(values: np.ndarray, center: float, half_width: float) -> float:
@@ -52,7 +52,6 @@ def manhattan_angle(N: np.ndarray, vertical: np.ndarray) -> float:
     hist, edges = np.histogram(ang, bins=360, range=(0, np.pi / 2))
     hist = ndi.gaussian_filter1d(hist.astype(float), 2, mode="wrap")
     a0 = edges[np.argmax(hist)] + (edges[1] - edges[0]) / 2
-    # refine with a circular mean (period pi/2) around the peak
     d = (ang - a0 + np.pi / 4) % (np.pi / 2) - np.pi / 4
     d = d[np.abs(d) < np.radians(2)]
     return float((a0 + np.mean(d)) % (np.pi / 2))
@@ -63,9 +62,9 @@ class PlanFrame:
     """World XZ <-> aligned plan UV, plus a raster grid over the plan."""
 
     angle: float
-    origin: np.ndarray  # plan-UV of grid cell (0, 0) corner
+    origin: np.ndarray
     res: float
-    shape: tuple[int, int]  # (rows=v, cols=u)
+    shape: tuple[int, int]
 
     def to_plan(self, P: np.ndarray) -> np.ndarray:
         c, s = np.cos(self.angle), np.sin(self.angle)
@@ -79,7 +78,7 @@ class PlanFrame:
 
     def to_cell(self, uv: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         ij = np.floor((uv - self.origin) / self.res).astype(int)
-        return ij[:, 1], ij[:, 0]  # row, col
+        return ij[:, 1], ij[:, 0]
 
     def cell_center(self, rows, cols) -> np.ndarray:
         return self.origin + (np.stack([cols, rows], -1) + 0.5) * self.res

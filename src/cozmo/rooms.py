@@ -14,7 +14,7 @@ from scipy import ndimage as ndi
 from .capture import Capture
 from .geometry import PlanFrame
 
-FAN_BINS = 180  # 2 degree azimuth bins per frame
+FAN_BINS = 180
 
 
 def free_space(
@@ -147,7 +147,6 @@ def segment_rooms(
     visited = ids[(ids > 0) & (cnt >= min_visit_frames)]
     unvisited = np.where(np.isin(ws, visited), 0, ws)
     ws = np.where(np.isin(ws, visited), ws, 0)
-    # relabel 1..n in a stable order (by first visit)
     order = [v for v in dict.fromkeys(ws[r[ok], c[ok]]) if v > 0]
     out = np.zeros_like(ws)
     for k, v in enumerate(order, 1):

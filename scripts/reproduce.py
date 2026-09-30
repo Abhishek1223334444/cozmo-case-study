@@ -12,7 +12,9 @@ def call(*args):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--rgb", action="store_true", help="Also run RGB-only derived photos and video")
-    p.add_argument("--damage", action="store_true", help="Also run floor plans with damage assessment")
+    p.add_argument(
+        "--damage", action="store_true", help="Also run floor plans with damage assessment"
+    )
     p.add_argument(
         "--property",
         action="store_true",

@@ -41,28 +41,28 @@ def quad(*sigmas: float) -> float:
 @dataclass
 class WallOut:
     index: int
-    start: list[float]  # plan-XY of first vertex, m
+    start: list[float]
     end: list[float]
     length: M
-    measured: bool  # backed by a surface fit (False: inferred from free space only)
+    measured: bool
 
 
 @dataclass
 class OpeningOut:
     kind: str
     wall: int
-    offset: M  # from the wall's start vertex to the near jamb
+    offset: M
     width: M
     height: M
     sill: M | None
-    connects_to: int | None  # room id beyond a door, if any
+    connects_to: int | None
 
 
 @dataclass
 class RoomOut:
     id: int
     name: str
-    polygon: list[list[float]]  # plan-XY, m, counter-clockwise
+    polygon: list[list[float]]
     walls: list[WallOut]
     floor_area: M
     perimeter: M
@@ -78,7 +78,7 @@ class PlanOut:
     rooms: list[RoomOut]
     adjacency: list[dict]
     footprint_area: M
-    frame: dict  # how plan-XY relates to the capture's world frame
+    frame: dict
     diagnostics: dict = field(default_factory=dict)
     damage: list = field(default_factory=list)
     scope: list = field(default_factory=list)

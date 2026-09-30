@@ -9,17 +9,17 @@ import numpy as np
 
 from .geometry import PlanFrame
 
-MIN_EDGE = 0.25  # m; shorter jogs in the raster outline are treated as noise
-SIMPLIFY = 0.10  # m; polygon simplification tolerance on the raster outline
-COLLAPSE = 0.04  # m; after snapping, steps shorter than this are merged away
+MIN_EDGE = 0.25
+SIMPLIFY = 0.10
+COLLAPSE = 0.04
 
 
 @dataclass
 class Wall:
-    axis: int  # 0: wall runs along plan-u (constant v); 1: along plan-v (constant u)
-    coord: float  # the constant coordinate, m
-    support: float = 0.0  # fraction of the wall's length backed by measured surface
-    spread: float = 0.0  # robust std of surface points about `coord`, m
+    axis: int
+    coord: float
+    support: float = 0.0
+    spread: float = 0.0
     n_points: int = 0
     snapped: bool = False
 
@@ -28,7 +28,7 @@ class Wall:
 class RoomLayout:
     id: int
     walls: list[Wall]
-    vertices: np.ndarray  # (k, 2) plan-UV, counter-clockwise
+    vertices: np.ndarray
     floor_y: float | None = None
     ceiling_y: float | None = None
     floor_spread: float = 0.0
@@ -62,7 +62,7 @@ def _mask_contour(mask: np.ndarray, frame: PlanFrame) -> np.ndarray:
     m = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((k, k), np.uint8))
     cs, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     c = max(cs, key=cv2.contourArea)
-    c = cv2.approxPolyDP(c, SIMPLIFY / frame.res, True)[:, 0, :]  # (x=col, y=row)
+    c = cv2.approxPolyDP(c, SIMPLIFY / frame.res, True)[:, 0, :]
     return frame.cell_center(c[:, 1], c[:, 0])
 
 
@@ -145,7 +145,6 @@ def _vertices(walls: list) -> np.ndarray:
     for prev, cur in zip(np.roll(np.array(walls, dtype=object), 1), walls, strict=True):
         pa, pc = (prev.axis, prev.coord) if isinstance(prev, Wall) else (prev[0], prev[1])
         ca, cc = (cur.axis, cur.coord) if isinstance(cur, Wall) else (cur[0], cur[1])
-        # axis 0 wall fixes v; axis 1 wall fixes u
         u = pc if pa == 1 else cc
         v = pc if pa == 0 else cc
         vs.append((u, v))
@@ -173,7 +172,7 @@ def _snap_walls(
     verts = _vertices(walls)
     for i, w in enumerate(walls):
         a, b = verts[i], verts[(i + 1) % len(walls)]
-        along = w.axis  # coordinate index that varies along the wall (0: u, 1: v)
+        along = w.axis
         across = 1 - along
         lo, hi = sorted((a[along], b[along]))
         length = hi - lo
@@ -196,7 +195,7 @@ def _snap_walls(
         strong = np.flatnonzero(hist >= 0.4 * hist.max())
         centers = edges[strong] + bin_m / 2
         peak = None
-        for cand in centers[np.argsort(centers * inward)]:  # outermost first
+        for cand in centers[np.argsort(centers * inward)]:
             if _swept_fraction(others, frame, along, lo, hi, w.coord, cand) < 0.15:
                 peak = cand
                 break
@@ -250,7 +249,6 @@ def fit_room(
     others: np.ndarray | None = None,
 ) -> RoomLayout:
     walls = _rectilinear(_mask_contour(mask, frame))
-    # wall points near this room at wall heights; normals in plan frame
     r, c = frame.to_cell(uv)
     ok = (r >= 0) & (r < mask.shape[0]) & (c >= 0) & (c < mask.shape[1])
     grown = cv2.dilate(mask.astype(np.uint8), np.ones((17, 17), np.uint8)) > 0
@@ -280,14 +278,14 @@ def fit_room(
 
 @dataclass
 class Opening:
-    kind: str  # "door" | "window"
-    wall: int  # index into RoomLayout.walls
-    start: float  # distance from the wall's first vertex, m
+    kind: str
+    wall: int
+    start: float
     width: float
-    bottom: float  # height above floor, m (0 for doors)
-    top: float  # head height above floor, m
-    seen_through: float  # fraction of the gap where the space beyond was observed
-    jamb_points: int  # points backing the two jamb edges (for the error model)
+    bottom: float
+    top: float
+    seen_through: float
+    jamb_points: int
 
 
 def _runs(flags: np.ndarray) -> list[tuple[int, int]]:
@@ -320,7 +318,7 @@ def find_openings(
             continue
         direction = np.sign(b[along] - a[along])
         outward = -inward_sign(verts, i, across)
-        s = (uv[:, along] - a[along]) * direction  # distance from vertex a
+        s = (uv[:, along] - a[along]) * direction
         m = (np.abs(uv[:, across] - w.coord) < plane_tol) & (s > -0.05) & (s < length + 0.05)
         s, hh = s[m], h_all[m]
         nb = int(np.ceil(length / bin_m))
@@ -334,7 +332,6 @@ def find_openings(
 
         low, mid = band(0.15, 0.75), band(0.9, 1.8)
 
-        # was the space just beyond the wall observed (seen through the gap)?
         t = (np.arange(nb) + 0.5) * bin_m
         beyond = np.zeros(nb)
         for depth in (0.25, 0.4, 0.6):
@@ -348,7 +345,6 @@ def find_openings(
             beyond = np.maximum(beyond, vals)
         seen = beyond >= 3
 
-        # close 1-2 bin speckle in the gap masks
         gap_full = ndi_close(~low & ~mid)
         gap_mid = ndi_close(~mid)
         mid_pts = s[(hh > 0.9) & (hh < 1.8)]
@@ -357,20 +353,19 @@ def find_openings(
                 width_bins = (en - st) * bin_m
                 if not (0.45 <= width_bins <= 2.4):
                     continue
-                if st == 0 or en == nb:  # gap touching a corner: can't bound both jambs
+                if st == 0 or en == nb:
                     continue
                 frac_seen = float(seen[st:en].mean())
                 if kind == "door" and frac_seen < need_seen:
                     continue
                 if kind == "window" and not (low[max(0, st - 2) : en + 2].mean() > 0.6):
                     continue
-                # refine jambs from the actual surface points either side of the gap
                 left = mid_pts[(mid_pts < st * bin_m + bin_m) & (mid_pts > st * bin_m - 0.15)]
                 right = mid_pts[(mid_pts > en * bin_m - bin_m) & (mid_pts < en * bin_m + 0.15)]
                 j0 = float(np.percentile(left, 98)) if len(left) > 5 else st * bin_m
                 j1 = float(np.percentile(right, 2)) if len(right) > 5 else en * bin_m
                 if j0 < 0 or j1 > length or j1 <= j0:
-                    continue  # unbounded jamb: do not report an opening outside its wall
+                    continue
                 head_pts = hh[(s > j0) & (s < j1) & (hh > 1.5)]
                 top = float(np.percentile(head_pts, 2)) if len(head_pts) > 20 else top_h
                 bottom = 0.0

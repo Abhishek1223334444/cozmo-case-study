@@ -1,29 +1,62 @@
-# Cozmo — phone captures to dimensioned plans
+# Cozmo: phone captures to dimensioned floor plans
 
-A local, runnable case-study prototype using the interviewer's three Stray Scanner
-samples. **No iPhone is needed to run the supplied examples.**
+Turns a phone scan of a property into a dimensioned, multi-room floor plan with
+visible-damage candidates. Input is a [Stray Scanner](https://github.com/strayrobots/scanner)
+LiDAR capture, a handheld video, or folders of photos. Everything runs locally.
 
-LiDAR reconstruction, room segmentation, dimensions, openings, translation-drift
-correction and interactive plan exports run on the supplied captures. Photo/video
-paths use local learned depth and image matching; their stitching remains experimental
-and is explicitly marked unresolved when views do not connect. This is **not a
-claim of passing the case study's accuracy or cold walk-in gates**.
+## Pipeline
 
-## Run the existing build
-
-```sh
-cd /Users/apple/cozmo-case-study
-uv run cozmo serve --directory out --port 8877
+```
+capture ─► load ─► drift correction ─► 3D point cloud ─► floor, ceiling, wall direction
+        ─► free-space map ─► room segmentation ─► wall fitting ─► openings
+        ─► measurements + intervals ─► surfaces ─► damage (optional) ─► checks ─► outputs
 ```
 
-Open `http://127.0.0.1:8877/` for the results gallery, or
-`http://127.0.0.1:8877/benchmark/c7d28f72c6/after/` for the larger scan with
-ceiling coverage. Each output directory also has an `index.html` that opens directly
-in a browser, plus `plan.json`, `plan.svg`, `plan.png`, and exact run options.
+### LiDAR tier
 
-## Fresh installation
+| Step | What happens | Module |
+|---|---|---|
+| 1. Load | Read RGB video, depth, confidence, per-frame camera poses and intrinsics | `capture.py` |
+| 2. Drift correction | Fit persistent wall/floor planes, solve smooth per-keyframe translations, keep the correction only if held-out plane residuals improve | `drift.py` |
+| 3. Point cloud | Back-project every depth frame into one world-frame cloud with normals (cached) | `cache.py`, `geometry.py` |
+| 4. Floor, ceiling, walls | Height histograms give floor and ceiling; wall normals give the dominant (Manhattan) axis | `geometry.py` |
+| 5. Free space | For each frame, cast a 180-bin fan from the camera to the farthest hit and accumulate seen-through floor cells | `rooms.py` |
+| 6. Rooms | Distance-transform sweep finds one seed per room (doorways disconnect first), seeds grow back over free space, splits that are not doorways are merged, rooms never entered are dropped | `rooms.py` |
+| 7. Walls | Trace each room outline, simplify to axis-aligned walls, snap every wall onto the measured wall surface, resolve overlaps between rooms | `layout.py` |
+| 8. Openings | Scan each wall for gaps: full-height and seen through is a door, wall below is a window | `layout.py` |
+| 9. Measurements | Wall lengths, floor area, perimeter, ceiling height and opening sizes, each with an uncertainty interval; doors link rooms into an adjacency graph | `lidar.py`, `plan.py` |
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git, then:
+### Photo and video tiers
+
+No depth or poses are used, only RGB.
+
+1. Metric depth per image from Depth Anything V2 (metric indoor).
+2. SIFT features matched with LightGlue, relative poses from PnP, pose-graph optimisation.
+3. Connected views are levelled and fused; each photo folder (or video segment) becomes a room envelope.
+4. Views that do not connect are kept apart and marked as display placement only.
+
+Modules: `models.py`, `matching.py`, `rgb.py`.
+
+### Damage (`--damage`)
+
+1. Sample about 12 frames across the capture.
+2. Score each frame with CLIPSeg for "water stain", "crack" and a "clean wall" reference.
+3. Keep regions above 0.55 that beat the reference by 0.15.
+4. Project each region onto its wall using depth and pose, and measure its area in m².
+5. Save evidence images, merge repeats of the same region, and add a scope line item. Water stains also raise a concealed-moisture inspection flag.
+
+Module: `damage.py`. Every result is a candidate that needs human confirmation.
+
+### Outputs and checks
+
+Each run writes `plan.json` (following `src/cozmo/schema.json`), `plan.png`, `plan.svg`,
+an offline interactive `index.html` and `run.json` with the exact options. Geometry
+checks (valid polygons, consistent lengths and areas, openings inside walls, no room
+overlaps) are stored in the plan. Modules: `plan.py`, `render.py`, `viewer.py`, `evaluation.py`.
+
+## Quick start
+
+Needs [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git.
 
 ```sh
 uv sync --locked
@@ -31,113 +64,27 @@ uv run python scripts/download_samples.py
 uv run cozmo fetch-models all
 ```
 
-Python 3.11 is selected by `.python-version`. Model weights and samples are fetched
-separately; they are not committed. Setup needs internet. Processing runs locally
-without an API key, remote inference or this author's infrastructure. LiDAR geometry
-does not need model weights unless `--damage` is enabled. Disk space: allow 4–6 GB
-for the environment, samples, weights and outputs. CPU works; depth inference can
-use `--device cuda` or `--device mps` on supported hardware.
-
-The existing `samples` link points to `/Users/apple/cozmo/samples` to reuse downloaded
-data. On another machine the download script creates an ordinary `samples` directory.
-
-## One command per capture
+One command per capture:
 
 ```sh
-# LiDAR: a ZIP or extracted Stray Scanner directory
-uv run cozmo run samples/c7d28f72c6 -o out/lidar-property
-
-# Include visible-damage candidates, surface projection and inspection rules
-uv run cozmo run samples/c00a170fe1 --damage -o out/lidar-single-full
-
-# Video: only RGB is consumed, never the neighbouring sensor files
+uv run cozmo run samples/c7d28f72c6 --damage -o out/lidar-property-full
 uv run cozmo run samples/c00a170fe1/rgb.mp4 --tier video --rotation 90 --max-frames 80 -o out/video-single
-
-# Photos: 2–8 images per room directory, no depth or pose sidecars
 uv run cozmo run path/to/photos --tier photos -o out/my-photos
-
-# Recreate isolated photo inputs from the supplied RGB video
-uv run cozmo prepare-sample samples/c00a170fe1 --plan out/benchmark/c00a170fe1/after/plan.json -o out/inputs/single
-uv run cozmo run out/inputs/single/photos --tier photos -o out/photos-single
 ```
 
-`prepare-sample` uses camera trajectories and inferred room polygons **only to assign
-development photo folders**. It writes that provenance explicitly. Photo inference
-receives only the exported images. These are weakly labelled development examples,
-not an independent photo benchmark. Supplied raw video is sideways and needs
-`--rotation 90`; native video may already have correct orientation metadata.
-
-## Reproduce and evaluate
+Reproduce every reported result, then browse them at `http://127.0.0.1:8877/`:
 
 ```sh
 uv run python scripts/reproduce.py --rgb --damage --property
-uv run cozmo validate out/benchmark/c7d28f72c6/after/plan.json
-uv run pytest -q
-uv run ruff check src scripts tests
-
-# After independently measuring and matching the physical dimensions:
-uv run cozmo evaluate out/lidar-property/plan.json my-laser-measurements.json
+uv run cozmo serve --directory out --port 8877
 ```
 
-The benchmark writes uncorrected and corrected plans and reports internal plane
-residuals. `--no-drift` selects the baseline. Replaying one recording tests deterministic
-processing; it does not test capture repeatability. The evaluation command requires
-independent laser/tape data and counts missed/phantom opening widths when the opening
-inventory is declared exhaustive. See `docs/ground-truth.example.json` for the format.
+Other commands: `cozmo validate plan.json`, `cozmo evaluate plan.json truth.json`
+(needs laser or tape measurements), `cozmo benchmark` (drift on/off ablation),
+`uv run pytest -q`.
 
-Every numerical measurement includes a value, units, standard-deviation allowance,
-and a nominal 95% interval. These are **uncalibrated model intervals**, not empirically
-verified confidence coverage. Geometry fitting residuals cannot establish absolute
-measurement accuracy. The local schema is in `src/cozmo/schema.json`; the published
-interviewer schema was not included in the linked materials.
+## Limits
 
-## Architecture
-
-- `capture.py`, `cache.py`: Stray Scanner decoding, per-frame intrinsics, content-aware cache keys.
-- `drift.py`: plane anchors, temporally smooth translations, held-out consistency check.
-- `geometry.py`, `rooms.py`, `layout.py`, `lidar.py`: fused points, room segmentation, wall fitting, opening candidates.
-- `models.py`, `matching.py`, `rgb.py`: pinned local depth weights, RootSIFT/LightGlue, PnP, pose-graph optimization, provisional room envelopes.
-- `damage.py`: CLIPSeg candidates, metric surface regions, evidence images and rule-based inspection flags.
-- `plan.py`, `schema.json`, `render.py`, `viewer.*`: common output contract and interactive/exported plans.
-- `evaluation.py`: schema/geometry checks, explicit dimension matching, benchmark and drift ablation.
-
-## Current limits
-
-LiDAR layouts assume approximately perpendicular walls. Rooms can be over-segmented,
-occluded walls inferred, and openings missed. Translation correction does not solve
-rotation drift or global depth bias. Unobserved ceilings are returned as `null`.
-
-RGB depth has learned scale and assumed intrinsics; sparse views, mirrors, blank walls
-and close-ups cause registration failures. Disconnected components get clearly marked
-display offsets, never invented adjacency. RGB room envelopes and openings do not yet
-meet the full stitched-property contract. Video components may contain multiple rooms
-without correctly separating them.
-
-Saved sample-run counts, geometry failures and runtime measurements are listed in
-`docs/benchmark-report.md`. Cached and cold runtimes are not directly comparable.
-
-Damage outputs are candidates requiring confirmation, not calibrated classifications.
-The supplied data has no labelled staged-damage benchmark; zero candidates does not
-mean no damage. Concealed-moisture flags only request inspection. Scope quantities are
-provisional and do not constitute a completed restoration estimate.
-
-Independent laser/tape truth, matched repeat captures, incumbent-app exports and the
-interviewer's schema are absent. Their gates remain unverified. See
-`docs/compliance.md`, `docs/technical-report.md`, `docs/capture-protocol.md`, and
-`docs/fix-declaration.md` for the submission evidence and limits.
-
-## Result bundle
-
-`deliverables/cozmo-case-study.zip` contains source, locked dependencies, docs, saved
-plans, a standalone results gallery, an installable wheel and incremental Git history.
-It excludes the large sample archives, model weights and caches; the pinned download
-commands above restore those. After extracting, open `out/index.html` in a browser.
-
-To regenerate the bundle after reproducing results and committing reviewed changes:
-
-```sh
-uv build --offline
-uv run --offline python scripts/package_results.py
-```
-
-`MANIFEST.json` records the source revision and hashes of every packaged file.
+Walls are assumed roughly perpendicular, and uncertainty intervals are not calibrated
+against ground truth. Photo and video stitching is incomplete. See
+`docs/technical-report.md` and `docs/compliance.md` for details.
